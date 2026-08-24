@@ -4,15 +4,18 @@ import { dailyReport } from './reports.js';
 import { addExceptionalOpening, addHoliday, calendarPanel, updateWeeklyClosure } from './views/calendar.js';
 import { buildCloseDialog, closeService, nextServiceSequence, servicePanel, shiftLabel, startServiceWithCalendar } from './views/service.js';
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
+import { createRepository } from './data/repository.js';
 
 const defaults={view:'customer',creator:false,shift:null,capacity:90,online:true,cart:[],calendar:{closedWeekdays:[2],exceptions:[]},services:{lunch:null,dinner:null},activeDay:null,menu:[
  {id:'margherita',type:'pizza',name:'Margherita',price:8,emoji:'🍕',ingredients:['Pomodoro','Mozzarella','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Mozzarella di bufala',price:2},{name:'Prosciutto cotto',price:2},{name:'Olive',price:1}],available:true},
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
  {id:'cola',type:'drink',name:'Cola',price:3,emoji:'🥤',ingredients:[],available:true}],orders:[]};
-let state=load(); let adminSection='service'; let customizing=null; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null;
+let state=load(); const repository=createRepository({client:globalThis.hotMeetingSupabaseClient,storage:localStorage,initialState:{menu:state.menu,services:state.services,orders:state.orders}}); let adminSection='service'; let customizing=null; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null;
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
+function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
+async function refreshRepositoryMenu(){try{state.menu=mergeMenuDefaults(await repository.getMenu(),defaults.menu);save();render()}catch{reportRepositoryError()}}
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(v)}
 function toast(text){const el=document.querySelector('#toast');el.textContent=text;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
 function pizzasAhead(){return state.orders.filter(o=>o.status==='preparing').reduce((n,o)=>n+o.items.reduce((s,i)=>s+i.quantity,0),0)}
@@ -72,7 +75,8 @@ function bind(){
     const paymentId=document.querySelector('input[name="payment"]:checked').value;
     const payment=DEMO_PAYMENT_METHODS.find(method=>method.id===paymentId);
     const total=state.cart.reduce((n,i)=>n+i.price,0),eta=estimateMinutes(pizzasAhead(),state.capacity),businessDate=state.activeDay.date,service=state.services[state.shift],sequence=nextServiceSequence(state.orders,service,state.activeDay),fees=total*payment.feeRate;
-    state.orders.push({id:143+state.orders.length,sequence,businessDate,businessDayId:state.activeDay.id,serviceId:service.id,source:'WEB',customer:document.querySelector('#name').value||'Cliente',phone,payment:payment.label,status:'preparing',shift:state.shift,createdAt:Date.now(),readyAt:Date.now()+eta*60000,total,gross:total,fee:fees,fees,items:state.cart.map(i=>({...i,quantity:1}))});
+    const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:state.activeDay.id,serviceId:service.id,source:'WEB',customer:document.querySelector('#name').value||'Cliente',phone,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:state.shift,createdAt:Date.now(),readyAt:Date.now()+eta*60000,total,gross:total,fee:fees,fees,items:state.cart.map(i=>({...i,quantity:1}))};
+    state.orders.push(order);void repository.createOrder(order).catch(reportRepositoryError);
     state.cart=[];save();render();toast('Ordine demo inviato in cucina!');
   });
   document.querySelector('#login')?.addEventListener('click',()=>{if(document.querySelector('#user').value==='creator'&&document.querySelector('#pass').value==='pizza143'){state.creator=true;save();render()}else toast('Credenziali non corrette')});
@@ -90,6 +94,7 @@ function bind(){
     const result=startServiceWithCalendar(state,shift,Date.now(),action,state.calendar);
     if(!result.started)return toast(result.closure.message||'Chiuso per riposo settimanale');
     state=result.state;
+    void repository.openService(state.services[shift]).catch(reportRepositoryError);
     save();render();toast(result.mode==='reopen'?'Servizio riaperto.':result.mode==='new-day'?'Nuova giornata aperta.':'Servizio aperto.');
   });
   document.querySelectorAll('[data-dialog-action]').forEach(b=>b.onclick=()=>{
@@ -97,6 +102,7 @@ function bind(){
       const shift=pendingDialog.shift,service=state.services[shift];
       if(service?.id===pendingDialog.serviceId){
         state.services[shift]=closeService(service);
+        void repository.closeService(service.id).catch(reportRepositoryError);
         if(state.shift===shift)state.shift=null;
         if(shift==='dinner'&&document.querySelector('#close-business-day')?.checked)state.activeDay={...state.activeDay,date:service.businessDate,status:'closed'};
         save();toast(shift==='dinner'?'Servizio serale chiuso.':'Servizio pranzo chiuso.');
@@ -110,9 +116,11 @@ function bind(){
   document.querySelectorAll('.remove-calendar-exception').forEach(b=>b.onclick=()=>{state.calendar={...state.calendar,exceptions:state.calendar.exceptions.filter((_,index)=>index!==Number(b.dataset.index))};save();render();toast('Eccezione rimossa.')});
   document.querySelector('#toggle-online')?.addEventListener('click',()=>{state.online=!state.online;save();render()});
   document.querySelector('#external')?.addEventListener('click',()=>{if(!state.shift)return toast('Apri prima un servizio.');toast('La schermata ordine ristorante sarà il prossimo flusso operativo.')});
-  document.querySelectorAll('.availability').forEach(b=>b.onclick=()=>{const p=state.menu.find(x=>x.id===b.dataset.id);p.available=!p.available;save();render()});
+  document.querySelectorAll('.availability').forEach(b=>b.onclick=()=>{const p=state.menu.find(x=>x.id===b.dataset.id);p.available=!p.available;save();render();void repository.saveProduct(p).catch(reportRepositoryError)});
   document.querySelectorAll('.ready').forEach(b=>b.onclick=()=>{state.orders.find(o=>String(o.id)===b.dataset.id).status='ready';save();render()});
   const dialog=document.querySelector('.dialog-card');
   if(dialog)releaseDialogTrap=trapDialogFocus(dialog,finishDialog);
 }
 render();setInterval(()=>{if(state.view==='kitchen')render()},1000);
+repository.subscribe(event=>{if(event.entity==='products')void refreshRepositoryMenu()});
+void refreshRepositoryMenu();
