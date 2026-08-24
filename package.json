@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:db": "RUN_DB_INTEGRATION=1 node --test test/schema.integration.test.js"
   }
 }

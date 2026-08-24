@@ -100,6 +100,8 @@ test('impedisce la cancellazione fisica degli ordini', () => {
 
   assert.match(sql, /before delete on public\.orders/i);
   assert.match(sql, /raise exception 'orders cannot be deleted'/i);
+  assert.match(sql, /create trigger orders_protect_history\s+before update on public\.orders/is);
+  assert.match(sql, /historical order fields cannot be overwritten/i);
   assert.match(sql, /revoke delete on table public\.orders from authenticated/i);
 });
 
@@ -116,4 +118,37 @@ test('impedisce di chiudere un servizio con ordini attivi', () => {
   assert.match(sql, /before update of status on public\.services/i);
   assert.match(sql, /status in \('received', 'preparing'\)/i);
   assert.match(sql, /raise exception 'service has active orders'/i);
+});
+
+test('la RPC applica schema JSON chiuso, limiti e idempotenza', () => {
+  const sql = migrationSql();
+
+  assert.match(sql, /octet_length\(payload::text\) > 32768/i);
+  assert.match(sql, /unknown top-level key/i);
+  assert.match(sql, /unknown item key/i);
+  assert.match(sql, /unknown change key/i);
+  assert.match(sql, /client_request_token uuid unique/i);
+  assert.match(sql, /request_fingerprint bytea/i);
+  assert.match(sql, /too many recent orders for this phone/i);
+  assert.doesNotMatch(sql, /values \(v_order_id, 1, payload\b/i);
+});
+
+test('le tabelle storiche sono immutabili e aggiornate tramite RPC Creator', () => {
+  const sql = migrationSql();
+
+  assert.match(sql, /before update or delete on public\.order_revisions/i);
+  assert.match(sql, /before update or delete on public\.order_items/i);
+  assert.match(sql, /before update or delete on public\.order_item_changes/i);
+  assert.match(sql, /before update or delete on public\.payment_adjustments/i);
+  assert.match(sql, /function public\.append_order_revision\(/i);
+  assert.match(sql, /function public\.record_payment_adjustment\(/i);
+  assert.match(sql, /revoke insert, update, delete on table public\.order_items/i);
+});
+
+test('snapshotta allergeni e vincola ordine e servizio alla stessa giornata', () => {
+  const sql = migrationSql();
+
+  assert.match(sql, /allergens_snapshot jsonb not null/i);
+  assert.match(sql, /jsonb_build_object\('id', allergen\.id, 'label_it', allergen\.label_it, 'label_en', allergen\.label_en\)/i);
+  assert.match(sql, /foreign key \(service_id, business_day_id\) references public\.services \(id, business_day_id\)/i);
 });

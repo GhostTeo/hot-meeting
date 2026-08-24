@@ -93,6 +93,7 @@ create table public.services (
   closed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  unique (id, business_day_id),
   unique (business_day_id, shift),
   check (status <> 'open' or opened_at is not null),
   check (status = 'open' or not online_orders_enabled)
@@ -130,6 +131,8 @@ create table public.orders (
   id uuid primary key default extensions.gen_random_uuid(),
   business_day_id uuid not null references public.business_days(id) on delete restrict,
   service_id uuid not null references public.services(id) on delete restrict,
+  client_request_token uuid unique,
+  request_fingerprint bytea,
   sequence integer not null check (sequence > 0),
   source text not null check (source in ('web', 'restaurant')),
   status text not null default 'preparing' check (status in ('received', 'preparing', 'ready', 'collected', 'cancelled')),
@@ -145,7 +148,13 @@ create table public.orders (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (business_day_id, sequence),
-  check (total_cents = gross_cents)
+  foreign key (service_id, business_day_id) references public.services (id, business_day_id) on delete restrict,
+  check (total_cents = gross_cents),
+  check (
+    (source = 'web' and client_request_token is not null and request_fingerprint is not null)
+    or
+    (source = 'restaurant' and client_request_token is null and request_fingerprint is null)
+  )
 );
 
 create table public.order_items (
@@ -156,6 +165,7 @@ create table public.order_items (
   unit_price_cents integer not null check (unit_price_cents > 0),
   quantity smallint not null check (quantity between 1 and 20),
   total_price_cents integer not null check (total_price_cents > 0),
+  allergens_snapshot jsonb not null default '[]'::jsonb check (jsonb_typeof(allergens_snapshot) = 'array'),
   note text not null default '' check (char_length(note) <= 500),
   sort_order integer not null default 0,
   created_at timestamptz not null default now(),
@@ -219,7 +229,7 @@ create index service_sessions_service_opened_idx on public.service_sessions (ser
 create index closures_dates_idx on public.closures (starts_on, ends_on) where enabled;
 create index orders_business_day_status_idx on public.orders (business_day_id, status, created_at desc);
 create index orders_service_status_idx on public.orders (service_id, status, created_at);
-create index orders_customer_phone_idx on public.orders (customer_phone);
+create index orders_customer_phone_created_idx on public.orders (customer_phone, created_at desc);
 create index order_items_order_idx on public.order_items (order_id, sort_order);
 create index order_item_changes_item_idx on public.order_item_changes (order_item_id);
 create index order_revisions_order_idx on public.order_revisions (order_id, revision desc);
@@ -280,6 +290,56 @@ $$;
 create trigger orders_preserve_history
 before delete on public.orders
 for each row execute function public.prevent_order_delete();
+
+create or replace function public.protect_order_history()
+returns trigger
+language plpgsql
+set search_path = pg_catalog
+as $$
+begin
+  if row(
+    old.business_day_id, old.service_id, old.client_request_token, old.request_fingerprint,
+    old.sequence, old.source, old.customer_name, old.customer_phone, old.customer_email,
+    old.payment_method, old.gross_cents, old.fee_cents, old.total_cents,
+    old.created_by, old.created_at
+  ) is distinct from row(
+    new.business_day_id, new.service_id, new.client_request_token, new.request_fingerprint,
+    new.sequence, new.source, new.customer_name, new.customer_phone, new.customer_email,
+    new.payment_method, new.gross_cents, new.fee_cents, new.total_cents,
+    new.created_by, new.created_at
+  ) then
+    raise exception 'historical order fields cannot be overwritten';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger orders_protect_history
+before update on public.orders
+for each row execute function public.protect_order_history();
+
+create or replace function public.prevent_historical_mutation()
+returns trigger
+language plpgsql
+set search_path = pg_catalog
+as $$
+begin
+  raise exception 'historical order records are append-only';
+end;
+$$;
+
+create trigger order_items_are_append_only
+before update or delete on public.order_items
+for each row execute function public.prevent_historical_mutation();
+create trigger order_item_changes_are_append_only
+before update or delete on public.order_item_changes
+for each row execute function public.prevent_historical_mutation();
+create trigger order_revisions_are_append_only
+before update or delete on public.order_revisions
+for each row execute function public.prevent_historical_mutation();
+create trigger payment_adjustments_are_append_only
+before update or delete on public.payment_adjustments
+for each row execute function public.prevent_historical_mutation();
 
 create or replace function public.prevent_service_close_with_active_orders()
 returns trigger
@@ -348,8 +408,12 @@ as $$
 declare
   v_service public.services%rowtype;
   v_product public.products%rowtype;
+  v_existing record;
   v_business_date date;
   v_business_status text;
+  v_service_id uuid;
+  v_request_token uuid;
+  v_request_fingerprint bytea;
   v_item jsonb;
   v_change jsonb;
   v_relation record;
@@ -361,7 +425,9 @@ declare
   v_email text;
   v_payment_method text;
   v_product_name text;
-  v_ingredient_name text;
+  v_note text;
+  v_product_id uuid;
+  v_ingredient_id uuid;
   v_quantity integer;
   v_change_quantity integer;
   v_unit_price integer;
@@ -369,10 +435,47 @@ declare
   v_fee integer;
   v_fee_rate numeric;
   v_item_count integer;
+  v_total_units integer := 0;
   v_item_position integer := 0;
+  v_normalized_items jsonb := '[]'::jsonb;
+  v_normalized_changes jsonb;
+  v_normalized_request jsonb;
+  v_server_items jsonb := '[]'::jsonb;
+  v_server_changes jsonb;
+  v_allergens jsonb;
+  v_revision_snapshot jsonb;
 begin
   if payload is null or jsonb_typeof(payload) <> 'object' then
     raise exception 'payload must be a JSON object' using errcode = '22023';
+  end if;
+  if octet_length(payload::text) > 32768 then
+    raise exception 'payload exceeds 32768 bytes' using errcode = '22023';
+  end if;
+  if exists (
+    select 1 from jsonb_object_keys(payload) as payload_key(key)
+    where not (key = any(array['request_token', 'service_id', 'customer', 'payment_method', 'items']))
+  ) then
+    raise exception 'unknown top-level key' using errcode = '22023';
+  end if;
+
+  if coalesce(payload ->> 'request_token', '') = '' then
+    raise exception 'request_token is required' using errcode = '22023';
+  end if;
+  begin
+    v_request_token := (payload ->> 'request_token')::uuid;
+    v_service_id := (payload ->> 'service_id')::uuid;
+  exception when invalid_text_representation then
+    raise exception 'request_token and service_id must be UUIDs' using errcode = '22023';
+  end;
+
+  if jsonb_typeof(payload -> 'customer') <> 'object' then
+    raise exception 'customer must be a JSON object' using errcode = '22023';
+  end if;
+  if exists (
+    select 1 from jsonb_object_keys(payload -> 'customer') as customer_key(key)
+    where not (key = any(array['name', 'phone', 'email']))
+  ) then
+    raise exception 'unknown customer key' using errcode = '22023';
   end if;
 
   if jsonb_typeof(payload -> 'items') <> 'array' then
@@ -380,8 +483,8 @@ begin
   end if;
 
   v_item_count := jsonb_array_length(payload -> 'items');
-  if v_item_count < 1 or v_item_count > 50 then
-    raise exception 'an order must contain between 1 and 50 items' using errcode = '22023';
+  if v_item_count < 1 or v_item_count > 20 then
+    raise exception 'an order must contain between 1 and 20 items' using errcode = '22023';
   end if;
 
   v_name := btrim(coalesce(payload -> 'customer' ->> 'name', ''));
@@ -402,10 +505,126 @@ begin
     raise exception 'unsupported payment method' using errcode = '22023';
   end if;
 
+  -- Canonicalize only the documented client contract. This representation is
+  -- hashed for idempotency; raw or unknown JSON never reaches order history.
+  for v_item in select value from jsonb_array_elements(payload -> 'items') loop
+    if jsonb_typeof(v_item) <> 'object' then
+      raise exception 'each item must be a JSON object' using errcode = '22023';
+    end if;
+    if v_item ?| array['price', 'price_cents', 'unit_price', 'unit_price_cents', 'total', 'total_cents', 'total_price_cents'] then
+      raise exception 'prices must not be supplied by the client' using errcode = '22023';
+    end if;
+    if exists (
+      select 1 from jsonb_object_keys(v_item) as item_key(key)
+      where not (key = any(array['product_id', 'quantity', 'note', 'changes']))
+    ) then
+      raise exception 'unknown item key' using errcode = '22023';
+    end if;
+
+    begin
+      v_product_id := (v_item ->> 'product_id')::uuid;
+      v_quantity := coalesce(nullif(v_item ->> 'quantity', '')::integer, 1);
+    exception when invalid_text_representation then
+      raise exception 'invalid item identifier or quantity' using errcode = '22023';
+    end;
+    if v_quantity < 1 or v_quantity > 20 then
+      raise exception 'item quantity must be between 1 and 20' using errcode = '22023';
+    end if;
+    v_total_units := v_total_units + v_quantity;
+    if v_total_units > 50 then
+      raise exception 'order quantity exceeds 50 units' using errcode = '22023';
+    end if;
+
+    v_note := btrim(coalesce(v_item ->> 'note', ''));
+    if char_length(v_note) > 500 then
+      raise exception 'item note is too long' using errcode = '22023';
+    end if;
+    if coalesce(jsonb_typeof(v_item -> 'changes'), 'array') <> 'array' then
+      raise exception 'item changes must be a JSON array' using errcode = '22023';
+    end if;
+    if jsonb_array_length(coalesce(v_item -> 'changes', '[]'::jsonb)) > 20 then
+      raise exception 'an item cannot contain more than 20 changes' using errcode = '22023';
+    end if;
+    if exists (
+      select 1
+        from jsonb_array_elements(coalesce(v_item -> 'changes', '[]'::jsonb)) as duplicate_change(value)
+       group by value ->> 'type', value ->> 'ingredient_id'
+      having count(*) > 1
+    ) then
+      raise exception 'duplicate item change' using errcode = '22023';
+    end if;
+
+    v_normalized_changes := '[]'::jsonb;
+    for v_change in select value from jsonb_array_elements(coalesce(v_item -> 'changes', '[]'::jsonb)) loop
+      if jsonb_typeof(v_change) <> 'object' then
+        raise exception 'each change must be a JSON object' using errcode = '22023';
+      end if;
+      if exists (
+        select 1 from jsonb_object_keys(v_change) as change_key(key)
+        where not (key = any(array['type', 'ingredient_id', 'quantity']))
+      ) then
+        raise exception 'unknown change key' using errcode = '22023';
+      end if;
+      if coalesce(v_change ->> 'type', '') not in ('removed', 'addition') then
+        raise exception 'invalid item change' using errcode = '22023';
+      end if;
+      begin
+        v_ingredient_id := (v_change ->> 'ingredient_id')::uuid;
+        v_change_quantity := coalesce(nullif(v_change ->> 'quantity', '')::integer, 1);
+      exception when invalid_text_representation then
+        raise exception 'invalid change identifier or quantity' using errcode = '22023';
+      end;
+      if v_change_quantity < 1 or v_change_quantity > 10 then
+        raise exception 'change quantity must be between 1 and 10' using errcode = '22023';
+      end if;
+      v_normalized_changes := v_normalized_changes || jsonb_build_array(jsonb_build_object(
+        'type', v_change ->> 'type',
+        'ingredient_id', v_ingredient_id,
+        'quantity', v_change_quantity
+      ));
+    end loop;
+
+    v_normalized_items := v_normalized_items || jsonb_build_array(jsonb_build_object(
+      'product_id', v_product_id,
+      'quantity', v_quantity,
+      'note', v_note,
+      'changes', v_normalized_changes
+    ));
+  end loop;
+
+  v_normalized_request := jsonb_build_object(
+    'service_id', v_service_id,
+    'customer', jsonb_build_object('name', v_name, 'phone', v_phone, 'email', v_email),
+    'payment_method', v_payment_method,
+    'items', v_normalized_items
+  );
+  v_request_fingerprint := extensions.digest(v_normalized_request::text, 'sha256');
+
+  select orders.id, orders.request_fingerprint, orders.sequence, orders.status,
+         orders.gross_cents, orders.fee_cents, orders.total_cents, day.business_date
+    into v_existing
+    from public.orders orders
+    join public.business_days day on day.id = orders.business_day_id
+   where orders.client_request_token = v_request_token;
+  if found then
+    if v_existing.request_fingerprint <> v_request_fingerprint then
+      raise exception 'idempotency token already used with different payload' using errcode = '22023';
+    end if;
+    return jsonb_build_object(
+      'order_id', v_existing.id,
+      'business_date', v_existing.business_date,
+      'sequence', v_existing.sequence,
+      'status', v_existing.status,
+      'gross_cents', v_existing.gross_cents,
+      'fee_cents', v_existing.fee_cents,
+      'total_cents', v_existing.total_cents
+    );
+  end if;
+
   select *
     into v_service
     from public.services
-   where id = (payload ->> 'service_id')::uuid
+   where id = v_service_id
      and status = 'open'
      and online_orders_enabled
    for update;
@@ -423,67 +642,68 @@ begin
     raise exception 'business day is not open' using errcode = 'P0001';
   end if;
 
-  -- First pass: reject client-supplied money and calculate every amount from
-  -- available catalog records. No order or sequence is allocated until the
-  -- complete payload has passed validation.
-  for v_item in select value from jsonb_array_elements(payload -> 'items') loop
-    if jsonb_typeof(v_item) <> 'object' then
-      raise exception 'each item must be a JSON object' using errcode = '22023';
-    end if;
-    if v_item ?| array['price', 'price_cents', 'unit_price', 'unit_price_cents', 'total', 'total_cents', 'total_price_cents'] then
-      raise exception 'prices must not be supplied by the client' using errcode = '22023';
-    end if;
+  if (
+    select count(*)
+      from public.orders
+     where customer_phone = v_phone
+       and source = 'web'
+       and created_at >= clock_timestamp() - interval '10 minutes'
+  ) >= 5 then
+    raise exception 'too many recent orders for this phone' using errcode = 'P0001';
+  end if;
 
-    v_quantity := coalesce(nullif(v_item ->> 'quantity', '')::integer, 1);
-    if v_quantity < 1 or v_quantity > 20 then
-      raise exception 'item quantity must be between 1 and 20' using errcode = '22023';
-    end if;
-    if char_length(coalesce(v_item ->> 'note', '')) > 500 then
-      raise exception 'item note is too long' using errcode = '22023';
-    end if;
-    if coalesce(jsonb_typeof(v_item -> 'changes'), 'array') <> 'array' then
-      raise exception 'item changes must be a JSON array' using errcode = '22023';
-    end if;
-    if exists (
-      select 1
-        from jsonb_array_elements(coalesce(v_item -> 'changes', '[]'::jsonb)) as duplicate_change(value)
-       group by value ->> 'type', value ->> 'ingredient_id'
-      having count(*) > 1
-    ) then
-      raise exception 'duplicate item change' using errcode = '22023';
-    end if;
-
+  -- Validate catalog relations and build a complete server-derived snapshot.
+  for v_item in select value from jsonb_array_elements(v_normalized_items) loop
+    v_product_id := (v_item ->> 'product_id')::uuid;
+    v_quantity := (v_item ->> 'quantity')::integer;
     select *
       into v_product
       from public.products
-     where id = (v_item ->> 'product_id')::uuid
+     where id = v_product_id
        and available
        for share;
     if not found then
       raise exception 'product is unavailable' using errcode = '22023';
     end if;
 
+    select coalesce(
+             (select translation.name from public.product_translations translation
+               where translation.product_id = v_product.id and translation.locale = 'it'),
+             v_product.slug
+           ) into v_product_name;
+    select coalesce(
+             jsonb_agg(jsonb_build_object('id', allergen.id, 'label_it', allergen.label_it, 'label_en', allergen.label_en) order by allergen.eu_order),
+             '[]'::jsonb
+           )
+      into v_allergens
+      from public.product_allergens product_allergen
+      join public.allergens allergen on allergen.id = product_allergen.allergen_id
+     where product_allergen.product_id = v_product.id;
+
     v_unit_price := v_product.price_cents;
-
-    for v_change in select value from jsonb_array_elements(coalesce(v_item -> 'changes', '[]'::jsonb)) loop
-      if jsonb_typeof(v_change) <> 'object' or coalesce(v_change ->> 'type', '') not in ('removed', 'addition') then
-        raise exception 'invalid item change' using errcode = '22023';
-      end if;
-
+    v_server_changes := '[]'::jsonb;
+    for v_change in select value from jsonb_array_elements(v_item -> 'changes') loop
+      v_ingredient_id := (v_change ->> 'ingredient_id')::uuid;
+      v_change_quantity := (v_change ->> 'quantity')::integer;
       select pi.is_included, pi.removable, pi.can_add, pi.max_quantity,
-             ingredient.available, ingredient.additional_price_cents
+             ingredient.available, ingredient.additional_price_cents,
+             coalesce(name_it.name, ingredient.slug) as name_it,
+             coalesce(name_en.name, name_it.name, ingredient.slug) as name_en
         into v_relation
         from public.product_ingredients pi
         join public.ingredients ingredient on ingredient.id = pi.ingredient_id
+        left join public.ingredient_translations name_it
+          on name_it.ingredient_id = ingredient.id and name_it.locale = 'it'
+        left join public.ingredient_translations name_en
+          on name_en.ingredient_id = ingredient.id and name_en.locale = 'en'
        where pi.product_id = v_product.id
-         and pi.ingredient_id = (v_change ->> 'ingredient_id')::uuid
+         and pi.ingredient_id = v_ingredient_id
        for share of pi, ingredient;
 
       if not found or not v_relation.available then
         raise exception 'ingredient is unavailable for this product' using errcode = '22023';
       end if;
 
-      v_change_quantity := coalesce(nullif(v_change ->> 'quantity', '')::integer, 1);
       if v_change ->> 'type' = 'removed' then
         if not v_relation.is_included or not v_relation.removable or v_change_quantity <> 1 then
           raise exception 'ingredient cannot be removed' using errcode = '22023';
@@ -494,72 +714,81 @@ begin
         end if;
         v_unit_price := v_unit_price + (v_relation.additional_price_cents * v_change_quantity);
       end if;
+      v_server_changes := v_server_changes || jsonb_build_array(jsonb_build_object(
+        'type', v_change ->> 'type',
+        'ingredient_id', v_ingredient_id,
+        'name_it', v_relation.name_it,
+        'name_en', v_relation.name_en,
+        'unit_price_cents', case when v_change ->> 'type' = 'addition' then v_relation.additional_price_cents else 0 end,
+        'quantity', v_change_quantity
+      ));
     end loop;
 
     v_gross := v_gross + (v_unit_price * v_quantity);
+    v_server_items := v_server_items || jsonb_build_array(jsonb_build_object(
+      'product_id', v_product.id,
+      'product_type', v_product.product_type,
+      'name_it', v_product_name,
+      'unit_price_cents', v_unit_price,
+      'quantity', v_quantity,
+      'total_price_cents', v_unit_price * v_quantity,
+      'note', v_item ->> 'note',
+      'changes', v_server_changes,
+      'allergens', v_allergens
+    ));
   end loop;
 
   v_fee_rate := case v_payment_method when 'cash' then 0 else 0.02 end;
   v_fee := round(v_gross * v_fee_rate)::integer;
-  v_sequence := public.next_order_sequence(v_service.business_day_id);
 
-  insert into public.orders (
-    id, business_day_id, service_id, sequence, source, status,
-    customer_name, customer_phone, customer_email, payment_method,
-    gross_cents, fee_cents, total_cents, eta_ready_at
-  ) values (
-    v_order_id, v_service.business_day_id, v_service.id, v_sequence, 'web', 'preparing',
-    v_name, v_phone, v_email, v_payment_method,
-    v_gross, v_fee, v_gross, now() + interval '10 minutes'
-  );
+  begin
+    v_sequence := public.next_order_sequence(v_service.business_day_id);
+    insert into public.orders (
+      id, business_day_id, service_id, client_request_token, request_fingerprint,
+      sequence, source, status, customer_name, customer_phone, customer_email,
+      payment_method, gross_cents, fee_cents, total_cents, eta_ready_at
+    ) values (
+      v_order_id, v_service.business_day_id, v_service.id, v_request_token, v_request_fingerprint,
+      v_sequence, 'web', 'preparing', v_name, v_phone, v_email,
+      v_payment_method, v_gross, v_fee, v_gross, now() + interval '10 minutes'
+    );
+  exception when unique_violation then
+    select orders.id, orders.request_fingerprint, orders.sequence, orders.status,
+           orders.gross_cents, orders.fee_cents, orders.total_cents, day.business_date
+      into v_existing
+      from public.orders orders
+      join public.business_days day on day.id = orders.business_day_id
+     where orders.client_request_token = v_request_token;
+    if not found then
+      raise;
+    end if;
+    if v_existing.request_fingerprint <> v_request_fingerprint then
+      raise exception 'idempotency token already used with different payload' using errcode = '22023';
+    end if;
+    return jsonb_build_object(
+      'order_id', v_existing.id,
+      'business_date', v_existing.business_date,
+      'sequence', v_existing.sequence,
+      'status', v_existing.status,
+      'gross_cents', v_existing.gross_cents,
+      'fee_cents', v_existing.fee_cents,
+      'total_cents', v_existing.total_cents
+    );
+  end;
 
-  for v_item in select value from jsonb_array_elements(payload -> 'items') loop
+  for v_item in select value from jsonb_array_elements(v_server_items) loop
     v_item_position := v_item_position + 1;
-    v_quantity := coalesce(nullif(v_item ->> 'quantity', '')::integer, 1);
-
-    select * into v_product
-      from public.products
-     where id = (v_item ->> 'product_id')::uuid and available;
-    select coalesce(
-             (select translation.name from public.product_translations translation
-               where translation.product_id = v_product.id and translation.locale = 'it'),
-             v_product.slug
-           ) into v_product_name;
-
-    v_unit_price := v_product.price_cents;
-    for v_change in select value from jsonb_array_elements(coalesce(v_item -> 'changes', '[]'::jsonb)) loop
-      if v_change ->> 'type' = 'addition' then
-        select ingredient.additional_price_cents
-          into v_relation
-          from public.ingredients ingredient
-         where ingredient.id = (v_change ->> 'ingredient_id')::uuid;
-        v_change_quantity := coalesce(nullif(v_change ->> 'quantity', '')::integer, 1);
-        v_unit_price := v_unit_price + (v_relation.additional_price_cents * v_change_quantity);
-      end if;
-    end loop;
-
     v_order_item_id := extensions.gen_random_uuid();
     insert into public.order_items (
       id, order_id, product_id, product_name_snapshot, unit_price_cents,
-      quantity, total_price_cents, note, sort_order
+      quantity, total_price_cents, allergens_snapshot, note, sort_order
     ) values (
-      v_order_item_id, v_order_id, v_product.id, v_product_name, v_unit_price,
-      v_quantity, v_unit_price * v_quantity, btrim(coalesce(v_item ->> 'note', '')), v_item_position
+      v_order_item_id, v_order_id, (v_item ->> 'product_id')::uuid, v_item ->> 'name_it',
+      (v_item ->> 'unit_price_cents')::integer, (v_item ->> 'quantity')::integer,
+      (v_item ->> 'total_price_cents')::integer, v_item -> 'allergens', v_item ->> 'note', v_item_position
     );
 
-    for v_change in select value from jsonb_array_elements(coalesce(v_item -> 'changes', '[]'::jsonb)) loop
-      select ingredient.additional_price_cents,
-             coalesce(
-               (select translation.name from public.ingredient_translations translation
-                 where translation.ingredient_id = ingredient.id and translation.locale = 'it'),
-               ingredient.slug
-             )
-        into v_relation
-        from public.ingredients ingredient
-       where ingredient.id = (v_change ->> 'ingredient_id')::uuid;
-      v_ingredient_name := v_relation.coalesce;
-      v_change_quantity := coalesce(nullif(v_change ->> 'quantity', '')::integer, 1);
-
+    for v_change in select value from jsonb_array_elements(v_item -> 'changes') loop
       insert into public.order_item_changes (
         order_item_id, ingredient_id, change_type, ingredient_name_snapshot,
         unit_price_cents, quantity
@@ -567,19 +796,28 @@ begin
         v_order_item_id,
         (v_change ->> 'ingredient_id')::uuid,
         v_change ->> 'type',
-        v_ingredient_name,
-        case when v_change ->> 'type' = 'addition' then v_relation.additional_price_cents else 0 end,
-        v_change_quantity
+        v_change ->> 'name_it',
+        (v_change ->> 'unit_price_cents')::integer,
+        (v_change ->> 'quantity')::integer
       );
     end loop;
   end loop;
 
-  insert into public.order_revisions (order_id, revision, snapshot, reason)
-  values (v_order_id, 1, payload - 'customer' || jsonb_build_object(
+  v_revision_snapshot := jsonb_build_object(
+    'schema_version', 1,
+    'request_token', v_request_token,
+    'business_day_id', v_service.business_day_id,
+    'business_date', v_business_date,
+    'service_id', v_service.id,
     'customer', jsonb_build_object('name', v_name, 'phone', v_phone, 'email', v_email),
-    'server_gross_cents', v_gross,
-    'server_fee_cents', v_fee
-  ), 'Ordine originale');
+    'payment_method', v_payment_method,
+    'items', v_server_items,
+    'gross_cents', v_gross,
+    'fee_cents', v_fee,
+    'total_cents', v_gross
+  );
+  insert into public.order_revisions (order_id, revision, snapshot, reason)
+  values (v_order_id, 1, v_revision_snapshot, 'Ordine originale');
 
   insert into public.events (
     actor_kind, action, entity_type, entity_id, business_day_id, metadata
@@ -597,6 +835,132 @@ begin
     'fee_cents', v_fee,
     'total_cents', v_gross
   );
+end;
+$$;
+
+create or replace function public.append_order_revision(
+  p_order_id uuid,
+  p_snapshot jsonb,
+  p_reason text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  v_revision integer;
+  v_revision_id uuid := extensions.gen_random_uuid();
+  v_business_day_id uuid;
+  v_actor_id uuid := nullif(auth.jwt() ->> 'sub', '')::uuid;
+begin
+  if not public.is_creator() then
+    raise exception 'creator role required' using errcode = '42501';
+  end if;
+  if p_snapshot is null or jsonb_typeof(p_snapshot) <> 'object' then
+    raise exception 'revision snapshot must be an object' using errcode = '22023';
+  end if;
+  if octet_length(p_snapshot::text) > 65536 then
+    raise exception 'revision snapshot exceeds 65536 bytes' using errcode = '22023';
+  end if;
+  if char_length(btrim(coalesce(p_reason, ''))) not between 1 and 500 then
+    raise exception 'revision reason must be between 1 and 500 characters' using errcode = '22023';
+  end if;
+
+  select business_day_id
+    into v_business_day_id
+    from public.orders
+   where id = p_order_id
+   for update;
+  if not found then
+    raise exception 'order not found' using errcode = '22023';
+  end if;
+
+  select coalesce(max(revision), 0) + 1
+    into v_revision
+    from public.order_revisions
+   where order_id = p_order_id;
+
+  insert into public.order_revisions (id, order_id, revision, snapshot, reason, created_by)
+  values (v_revision_id, p_order_id, v_revision, p_snapshot, btrim(p_reason), v_actor_id);
+
+  insert into public.events (
+    actor_id, actor_kind, action, entity_type, entity_id, business_day_id, metadata
+  ) values (
+    v_actor_id, 'creator', 'order.revised', 'order', p_order_id, v_business_day_id,
+    jsonb_build_object('revision', v_revision, 'reason', btrim(p_reason))
+  );
+
+  return v_revision_id;
+end;
+$$;
+
+create or replace function public.record_payment_adjustment(
+  p_order_id uuid,
+  p_adjustment_type text,
+  p_amount_cents integer,
+  p_status text,
+  p_payment_method text,
+  p_note text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  v_adjustment_id uuid := extensions.gen_random_uuid();
+  v_business_day_id uuid;
+  v_actor_id uuid := nullif(auth.jwt() ->> 'sub', '')::uuid;
+begin
+  if not public.is_creator() then
+    raise exception 'creator role required' using errcode = '42501';
+  end if;
+  if p_adjustment_type not in ('supplement', 'refund') then
+    raise exception 'invalid adjustment type' using errcode = '22023';
+  end if;
+  if p_amount_cents is null or p_amount_cents <= 0 then
+    raise exception 'adjustment amount must be positive' using errcode = '22023';
+  end if;
+  if p_status not in ('pending', 'recorded', 'cancelled') then
+    raise exception 'invalid adjustment status' using errcode = '22023';
+  end if;
+  if p_payment_method is not null and p_payment_method not in ('cash', 'apple_pay', 'google_pay') then
+    raise exception 'invalid payment method' using errcode = '22023';
+  end if;
+  if char_length(coalesce(p_note, '')) > 500 then
+    raise exception 'adjustment note exceeds 500 characters' using errcode = '22023';
+  end if;
+
+  select business_day_id
+    into v_business_day_id
+    from public.orders
+   where id = p_order_id
+   for share;
+  if not found then
+    raise exception 'order not found' using errcode = '22023';
+  end if;
+
+  insert into public.payment_adjustments (
+    id, order_id, adjustment_type, amount_cents, status, payment_method, note, created_by
+  ) values (
+    v_adjustment_id, p_order_id, p_adjustment_type, p_amount_cents, p_status,
+    p_payment_method, coalesce(p_note, ''), v_actor_id
+  );
+
+  insert into public.events (
+    actor_id, actor_kind, action, entity_type, entity_id, business_day_id, metadata
+  ) values (
+    v_actor_id, 'creator', 'payment.adjustment-recorded', 'order', p_order_id, v_business_day_id,
+    jsonb_build_object(
+      'adjustment_id', v_adjustment_id,
+      'type', p_adjustment_type,
+      'amount_cents', p_amount_cents,
+      'status', p_status
+    )
+  );
+
+  return v_adjustment_id;
 end;
 $$;
 
@@ -720,22 +1084,35 @@ grant select on table public.public_opening_status, public.public_closure_calend
 grant select, insert, update, delete on table public.products, public.product_translations,
   public.ingredients, public.ingredient_translations, public.product_ingredients,
   public.allergens, public.product_allergens, public.business_days, public.services,
-  public.service_sessions, public.closures, public.orders, public.order_items,
-  public.order_item_changes, public.order_revisions, public.payment_adjustments to authenticated;
+  public.service_sessions, public.closures, public.orders to authenticated;
+grant select on table public.order_items, public.order_item_changes,
+  public.order_revisions, public.payment_adjustments to authenticated;
 grant select, insert on table public.events to authenticated;
 revoke delete on table public.orders from authenticated;
+revoke insert, update, delete on table public.order_items, public.order_item_changes,
+  public.order_revisions, public.payment_adjustments from authenticated;
 
 revoke all on function public.touch_updated_at() from public, anon, authenticated;
 revoke all on function public.prevent_event_mutation() from public, anon, authenticated;
 revoke all on function public.prevent_order_delete() from public, anon, authenticated;
+revoke all on function public.protect_order_history() from public, anon, authenticated;
+revoke all on function public.prevent_historical_mutation() from public, anon, authenticated;
 revoke all on function public.prevent_service_close_with_active_orders() from public, anon, authenticated;
 revoke all on function public.is_creator() from public, anon, authenticated;
 grant execute on function public.is_creator() to authenticated;
 revoke all on function public.next_order_sequence(uuid) from public, anon, authenticated;
 revoke all on function public.create_public_order(jsonb) from public, anon, authenticated;
 grant execute on function public.create_public_order(jsonb) to anon, authenticated;
+revoke all on function public.append_order_revision(uuid, jsonb, text) from public, anon, authenticated;
+grant execute on function public.append_order_revision(uuid, jsonb, text) to authenticated;
+revoke all on function public.record_payment_adjustment(uuid, text, integer, text, text, text) from public, anon, authenticated;
+grant execute on function public.record_payment_adjustment(uuid, text, integer, text, text, text) to authenticated;
 
 comment on function public.create_public_order(jsonb) is
   'Creates a public web order after validating service, catalog, customization and all prices server-side.';
+comment on function public.append_order_revision(uuid, jsonb, text) is
+  'Creator-only append channel for immutable order revision history.';
+comment on function public.record_payment_adjustment(uuid, text, integer, text, text, text) is
+  'Creator-only append channel for immutable payment adjustment history.';
 comment on table public.events is
   'Append-only operational audit log. Reports use indexed transactional tables instead.';
