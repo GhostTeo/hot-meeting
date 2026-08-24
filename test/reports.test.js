@@ -117,3 +117,19 @@ test('calcola mese e anno solari con i soli ordini del periodo', () => {
   });
   assert.equal(annualReport(sampleOrders, 2026).net, 97);
 });
+
+test('un ordine checkout non conta le bibite come pizze', () => {
+  const checkoutOrder = {
+    businessDate: '2026-08-24',
+    shift: 'dinner',
+    status: 'ready',
+    gross: 14,
+    fees: 0,
+    items: [
+      { type: 'pizza', name: 'Margherita', quantity: 1 },
+      { type: 'drink', name: 'Cola', quantity: 2 }
+    ]
+  };
+
+  assert.equal(dailyReport([checkoutOrder], '2026-08-24').pizzas, 1);
+});

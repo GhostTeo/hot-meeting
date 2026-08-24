@@ -23,7 +23,13 @@ function scheduledClosureDays(schedule) {
 
 function matchingException(date, exceptions) {
   if (Array.isArray(exceptions)) {
-    return exceptions.find(exception => exception.date === date || (exception.from <= date && date <= exception.to));
+    let exactMatch;
+    let rangeMatch;
+    for (const exception of exceptions) {
+      if (exception.date === date) exactMatch = exception;
+      else if (exception.from <= date && date <= exception.to) rangeMatch = exception;
+    }
+    return exactMatch || rangeMatch;
   }
   return exceptions?.[date];
 }

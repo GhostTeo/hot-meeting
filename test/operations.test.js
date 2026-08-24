@@ -61,3 +61,15 @@ test('un intervallo di apertura straordinaria prevale sulla chiusura settimanale
     { closed: false, message: 'Apertura straordinaria' }
   );
 });
+
+test('un’apertura puntuale prevale sulle ferie che includono la stessa data', () => {
+  const exceptions = [
+    { from: '2026-08-25', to: '2026-08-29', closed: true, message: 'Ferie' },
+    { date: '2026-08-27', closed: false, message: 'Apertura straordinaria' }
+  ];
+
+  assert.deepEqual(resolveClosure('2026-08-27', [4], exceptions), {
+    closed: false,
+    message: 'Apertura straordinaria'
+  });
+});

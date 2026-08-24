@@ -1,3 +1,5 @@
+import { nextDailySequence, resolveBusinessDate } from '../operations.js';
+
 const ACTIVE_STATUSES = new Set(['received', 'preparing']);
 
 const SHIFT_LABELS = {
@@ -18,6 +20,32 @@ export function closeService(service, closedAt = Date.now()) {
   const current = sessions.at(-1);
   if (current && current.closedAt == null) sessions[sessions.length - 1] = { ...current, closedAt };
   return { ...service, status: 'closed', sessions };
+}
+
+export function startServiceTransition(state, shift, now = Date.now(), action = 'open') {
+  const existing = state.services[shift];
+  const reopening = action === 'reopen' && existing?.status === 'closed';
+  const businessDate = reopening
+    ? existing.businessDate
+    : resolveBusinessDate(now, state.activeDay);
+  const openedAt = new Date(now).getTime();
+  const service = reopening
+    ? reopenService(existing, openedAt)
+    : {
+        id: `${shift}-${businessDate}-${openedAt}`,
+        shift,
+        status: 'open',
+        businessDate,
+        sequenceBase: nextDailySequence(state.orders, businessDate) - 1,
+        sessions: [{ openedAt, closedAt: null }]
+      };
+
+  return {
+    ...state,
+    services: { ...state.services, [shift]: service },
+    activeDay: { date: businessDate, status: 'open' },
+    shift
+  };
 }
 
 export function buildCloseDialog(service, orders, summary) {

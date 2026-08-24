@@ -10,7 +10,10 @@ function daysInMonth(year, month) {
 
 function pizzaCount(order) {
   if (Number.isFinite(Number(order.pizzas))) return Number(order.pizzas);
-  return (order.items || []).reduce((total, item) => total + Number(item.quantity || 1), 0);
+  return (order.items || []).reduce((total, item) => {
+    if (item.type && item.type !== 'pizza') return total;
+    return total + Number(item.quantity || 1);
+  }, 0);
 }
 
 function adjustmentTotals(adjustments = []) {

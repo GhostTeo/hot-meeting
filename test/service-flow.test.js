@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   buildCloseDialog,
   closeService,
-  reopenService
+  reopenService,
+  startServiceTransition
 } from '../js/views/service.js';
 import {
   addExceptionalOpening,
@@ -30,6 +31,29 @@ test('una riapertura mantiene giornata e progressivo', () => {
     { openedAt: 100, closedAt: 200 },
     { openedAt: 300, closedAt: null }
   ]);
+});
+
+test('la transizione UI riapre dopo mezzanotte la giornata appena chiusa', () => {
+  const state = {
+    activeDay: { date: '2026-08-24', status: 'closed' },
+    orders: [{ businessDate: '2026-08-24', sequence: 18 }],
+    services: { lunch: null, dinner: closedDinner },
+    shift: null
+  };
+
+  const reopened = startServiceTransition(
+    state,
+    'dinner',
+    '2026-08-25T00:30:00+02:00',
+    'reopen'
+  );
+
+  assert.equal(reopened.activeDay.date, '2026-08-24');
+  assert.equal(reopened.activeDay.status, 'open');
+  assert.equal(reopened.services.dinner.businessDate, '2026-08-24');
+  assert.equal(reopened.services.dinner.sequenceBase, 18);
+  assert.equal(reopened.services.dinner.sessions.length, 2);
+  assert.equal(reopened.shift, 'dinner');
 });
 
 test('la chiusura resta bloccata e identifica gli ordini attivi del turno', () => {
