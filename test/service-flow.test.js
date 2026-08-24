@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import {
   buildCloseDialog,
   closeService,
+  nextServiceSequence,
   reopenService,
+  servicePanel,
+  startServiceWithCalendar,
   startServiceTransition
 } from '../js/views/service.js';
 import {
@@ -35,9 +38,9 @@ test('una riapertura mantiene giornata e progressivo', () => {
 
 test('la transizione UI riapre dopo mezzanotte la giornata appena chiusa', () => {
   const state = {
-    activeDay: { date: '2026-08-24', status: 'closed' },
+    activeDay: { id: 'day-24', date: '2026-08-24', status: 'closed' },
     orders: [{ businessDate: '2026-08-24', sequence: 18 }],
-    services: { lunch: null, dinner: closedDinner },
+    services: { lunch: null, dinner: { ...closedDinner, businessDayId: 'day-24' } },
     shift: null
   };
 
@@ -52,8 +55,74 @@ test('la transizione UI riapre dopo mezzanotte la giornata appena chiusa', () =>
   assert.equal(reopened.activeDay.status, 'open');
   assert.equal(reopened.services.dinner.businessDate, '2026-08-24');
   assert.equal(reopened.services.dinner.sequenceBase, 18);
+  assert.equal(reopened.activeDay.id, 'day-24');
   assert.equal(reopened.services.dinner.sessions.length, 2);
   assert.equal(reopened.shift, 'dinner');
+  assert.equal(nextServiceSequence(reopened.orders, reopened.services.dinner, reopened.activeDay), 19);
+});
+
+test('giorni dopo una chiusura la stessa azione avvia la data corrente', () => {
+  const state = {
+    activeDay: { id: 'day-24', date: '2026-08-24', status: 'closed' },
+    orders: [{ businessDayId: 'day-24', businessDate: '2026-08-24', sequence: 18 }],
+    services: { lunch: null, dinner: { ...closedDinner, businessDayId: 'day-24' } },
+    shift: null
+  };
+
+  const started = startServiceTransition(state, 'dinner', '2026-08-27T10:00:00+02:00', 'reopen');
+
+  assert.equal(started.activeDay.date, '2026-08-27');
+  assert.notEqual(started.activeDay.id, 'day-24');
+  assert.equal(started.services.dinner.sequenceBase, 0);
+  assert.equal(started.services.dinner.sessions.length, 1);
+  assert.equal(nextServiceSequence(started.orders, started.services.dinner, started.activeDay), 1);
+});
+
+test('entro la finestra notturna il Creator può iniziare esplicitamente una nuova giornata', () => {
+  const state = {
+    activeDay: { id: 'day-24', date: '2026-08-24', status: 'closed' },
+    orders: [{ businessDayId: 'day-24', businessDate: '2026-08-24', sequence: 18 }],
+    services: { lunch: null, dinner: { ...closedDinner, businessDayId: 'day-24' } },
+    shift: null
+  };
+
+  const started = startServiceTransition(state, 'dinner', '2026-08-25T01:00:00+02:00', 'new-day');
+
+  assert.equal(started.activeDay.date, '2026-08-25');
+  assert.notEqual(started.activeDay.id, 'day-24');
+  assert.equal(started.services.dinner.sequenceBase, 0);
+  assert.equal(started.services.dinner.sessions.length, 1);
+});
+
+test('la validazione calendario usa la data operativa scelta dalla transizione', () => {
+  const state = {
+    activeDay: { id: 'day-24', date: '2026-08-24', status: 'closed' },
+    orders: [],
+    services: { lunch: null, dinner: { ...closedDinner, businessDayId: 'day-24' } },
+    shift: null
+  };
+  const calendar = { closedWeekdays: [2], exceptions: [] };
+
+  const reopened = startServiceWithCalendar(state, 'dinner', '2026-08-25T01:00:00+02:00', 'reopen', calendar);
+  const newDay = startServiceWithCalendar(state, 'dinner', '2026-08-25T01:00:00+02:00', 'new-day', calendar);
+
+  assert.equal(reopened.started, true);
+  assert.equal(reopened.targetDate, '2026-08-24');
+  assert.equal(newDay.started, false);
+  assert.equal(newDay.targetDate, '2026-08-25');
+  assert.equal(newDay.closure.closed, true);
+});
+
+test('il pannello offre nuova giornata insieme alla riapertura solo nella finestra valida', () => {
+  const services = { lunch: null, dinner: closedDinner };
+
+  const withinWindow = servicePanel(services, '2026-08-25T01:00:00+02:00');
+  const daysLater = servicePanel(services, '2026-08-27T10:00:00+02:00');
+
+  assert.match(withinWindow, /Riapri servizio/);
+  assert.match(withinWindow, /Avvia nuova giornata/);
+  assert.doesNotMatch(daysLater, /Riapri servizio/);
+  assert.match(daysLater, /Apri servizio/);
 });
 
 test('la chiusura resta bloccata e identifica gli ordini attivi del turno', () => {
