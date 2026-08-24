@@ -34,3 +34,31 @@ export function summarizeOrders(orders, shift) {
     return sum;
   }, { orders: 0, pizzas: 0, gross: 0, fees: 0, net: 0 });
 }
+
+export function calculateCustomizedPrice(basePrice, additions = []) {
+  return additions.reduce(
+    (total, addition) => total + Number(addition.price || 0) * Number(addition.quantity || 0),
+    Number(basePrice || 0)
+  );
+}
+
+export const DEMO_PAYMENT_METHODS = Object.freeze([
+  { id: 'cash', label: 'Paga in cassa', feeRate: 0 },
+  { id: 'apple_pay', label: 'Apple Pay · demo', feeRate: 0.02 },
+  { id: 'google_pay', label: 'Google Pay · demo', feeRate: 0.02 }
+]);
+
+export function mergeMenuDefaults(savedMenu = [], defaultMenu = []) {
+  const defaultsById = new Map(defaultMenu.map(product => [product.id, product]));
+  const merged = savedMenu.map(product => ({ ...(defaultsById.get(product.id) || {}), ...product }));
+  const savedIds = new Set(savedMenu.map(product => product.id));
+  return [...merged, ...defaultMenu.filter(product => !savedIds.has(product.id))];
+}
+
+export function customizationLines(item = {}) {
+  const lines = [];
+  if (item.removed?.length) lines.push(`SENZA: ${item.removed.join(', ')}`);
+  const additions = (item.additions || []).filter(addition => addition.quantity > 0);
+  if (additions.length) lines.push(`AGGIUNTE: ${additions.map(addition => `${addition.quantity}× ${addition.name}`).join(', ')}`);
+  return lines;
+}
