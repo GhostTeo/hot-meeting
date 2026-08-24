@@ -393,6 +393,19 @@ as $$
   select coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'creator';
 $$;
 
+create or replace function public.is_open_business_day(p_business_day_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog
+as $$
+  select exists (
+    select 1 from public.business_days
+     where id = p_business_day_id and status = 'open'
+  );
+$$;
+
 create or replace function public.next_order_sequence(p_business_day uuid)
 returns integer
 language plpgsql
@@ -1426,6 +1439,355 @@ begin
 end;
 $$;
 
+create or replace function public.save_product(
+  p_product_id uuid,
+  p_price_cents integer,
+  p_available boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  v_product public.products%rowtype;
+  v_actor_id uuid;
+begin
+  if not public.is_creator() then
+    raise exception 'creator role required' using errcode = '42501';
+  end if;
+  if p_price_cents is not null and p_price_cents <= 0 then
+    raise exception 'price must be positive' using errcode = '22023';
+  end if;
+  begin
+    v_actor_id := nullif(auth.jwt() ->> 'sub', '')::uuid;
+  exception when invalid_text_representation then
+    v_actor_id := null;
+  end;
+  update public.products set
+    price_cents = coalesce(p_price_cents, price_cents),
+    available = coalesce(p_available, available)
+   where id = p_product_id
+  returning * into v_product;
+  if not found then
+    raise exception 'product not found' using errcode = '22023';
+  end if;
+  insert into public.events (actor_id, actor_kind, action, entity_type, entity_id, metadata)
+  values (
+    v_actor_id, 'creator', 'product.updated', 'product', v_product.id,
+    jsonb_build_object('price_cents', v_product.price_cents, 'available', v_product.available)
+  );
+  return jsonb_build_object(
+    'id', v_product.id, 'slug', v_product.slug, 'product_type', v_product.product_type,
+    'price_cents', v_product.price_cents, 'available', v_product.available
+  );
+end;
+$$;
+
+create or replace function public.transition_order_status(
+  p_order_id uuid,
+  p_target_status text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  v_order public.orders%rowtype;
+  v_actor_id uuid;
+begin
+  if not public.is_creator() then
+    raise exception 'creator role required' using errcode = '42501';
+  end if;
+  select * into v_order from public.orders where id = p_order_id for update;
+  if not found then
+    raise exception 'order not found' using errcode = '22023';
+  end if;
+  if not (
+    (v_order.status = 'received' and p_target_status in ('preparing', 'ready', 'cancelled'))
+    or (v_order.status = 'preparing' and p_target_status in ('ready', 'cancelled'))
+    or (v_order.status = 'ready' and p_target_status = 'collected')
+  ) then
+    raise exception 'invalid order status transition' using errcode = 'P0001';
+  end if;
+  begin
+    v_actor_id := nullif(auth.jwt() ->> 'sub', '')::uuid;
+  exception when invalid_text_representation then
+    v_actor_id := null;
+  end;
+  update public.orders set status = p_target_status
+   where id = p_order_id returning * into v_order;
+  insert into public.events (
+    actor_id, actor_kind, action, entity_type, entity_id, business_day_id, metadata
+  ) values (
+    v_actor_id, 'creator', 'order.status-transitioned', 'order', v_order.id,
+    v_order.business_day_id, jsonb_build_object('to_status', p_target_status)
+  );
+  return jsonb_build_object('order_id', v_order.id, 'status', v_order.status);
+end;
+$$;
+
+create or replace function public.open_service(
+  p_business_date date,
+  p_shift text,
+  p_online_orders_enabled boolean,
+  p_capacity_pizzas_hour integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  v_day public.business_days%rowtype;
+  v_service public.services%rowtype;
+  v_actor_id uuid;
+begin
+  if not public.is_creator() then
+    raise exception 'creator role required' using errcode = '42501';
+  end if;
+  if p_business_date is null or p_shift not in ('lunch', 'dinner') then
+    raise exception 'valid business date and shift are required' using errcode = '22023';
+  end if;
+  if p_capacity_pizzas_hour is null or p_capacity_pizzas_hour not between 1 and 1000 then
+    raise exception 'capacity must be between 1 and 1000' using errcode = '22023';
+  end if;
+  begin
+    v_actor_id := nullif(auth.jwt() ->> 'sub', '')::uuid;
+  exception when invalid_text_representation then
+    v_actor_id := null;
+  end;
+
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_business_date::text, 0));
+  insert into public.business_days (business_date)
+  values (p_business_date)
+  on conflict (business_date) do nothing;
+
+  select * into v_day from public.business_days
+   where business_date = p_business_date for update;
+  if v_day.status <> 'open' then
+    raise exception 'business day is closed; use reopen_service' using errcode = 'P0001';
+  end if;
+  if exists (select 1 from public.services where business_day_id = v_day.id and shift = p_shift) then
+    raise exception 'service already exists; use reopen_service' using errcode = 'P0001';
+  end if;
+
+  insert into public.services (
+    business_day_id, shift, status, online_orders_enabled,
+    capacity_pizzas_hour, opened_at, closed_at
+  ) values (
+    v_day.id, p_shift, 'open', coalesce(p_online_orders_enabled, true),
+    p_capacity_pizzas_hour, clock_timestamp(), null
+  ) returning * into v_service;
+  insert into public.service_sessions (service_id, opened_at, opened_by)
+  values (v_service.id, v_service.opened_at, v_actor_id);
+  insert into public.events (
+    actor_id, actor_kind, action, entity_type, entity_id, business_day_id, metadata
+  ) values (
+    v_actor_id, 'creator', 'service.opened', 'service', v_service.id, v_day.id,
+    jsonb_build_object('shift', p_shift)
+  );
+
+  return jsonb_build_object(
+    'business_day_id', v_day.id, 'business_date', v_day.business_date,
+    'business_day_status', v_day.status, 'service_id', v_service.id,
+    'shift', v_service.shift, 'status', v_service.status,
+    'online_orders_enabled', v_service.online_orders_enabled,
+    'capacity_pizzas_hour', v_service.capacity_pizzas_hour,
+    'opened_at', v_service.opened_at, 'closed_at', v_service.closed_at
+  );
+end;
+$$;
+
+create or replace function public.set_service_online(
+  p_service_id uuid,
+  p_enabled boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  v_service public.services%rowtype;
+  v_day public.business_days%rowtype;
+  v_actor_id uuid;
+begin
+  if not public.is_creator() then
+    raise exception 'creator role required' using errcode = '42501';
+  end if;
+  select service.* into v_service from public.services service
+   where service.id = p_service_id for update;
+  if not found then
+    raise exception 'service not found' using errcode = '22023';
+  end if;
+  if v_service.status <> 'open' and coalesce(p_enabled, false) then
+    raise exception 'closed service cannot accept online orders' using errcode = 'P0001';
+  end if;
+  begin
+    v_actor_id := nullif(auth.jwt() ->> 'sub', '')::uuid;
+  exception when invalid_text_representation then
+    v_actor_id := null;
+  end;
+  update public.services set online_orders_enabled = coalesce(p_enabled, false)
+   where id = p_service_id returning * into v_service;
+  select * into v_day from public.business_days where id = v_service.business_day_id;
+  insert into public.events (
+    actor_id, actor_kind, action, entity_type, entity_id, business_day_id, metadata
+  ) values (
+    v_actor_id, 'creator', 'service.online-changed', 'service', v_service.id,
+    v_service.business_day_id, jsonb_build_object('enabled', v_service.online_orders_enabled)
+  );
+  return jsonb_build_object(
+    'business_day_id', v_day.id, 'business_date', v_day.business_date,
+    'business_day_status', v_day.status, 'service_id', v_service.id,
+    'shift', v_service.shift, 'status', v_service.status,
+    'online_orders_enabled', v_service.online_orders_enabled,
+    'capacity_pizzas_hour', v_service.capacity_pizzas_hour,
+    'opened_at', v_service.opened_at, 'closed_at', v_service.closed_at
+  );
+end;
+$$;
+
+create or replace function public.reopen_service(
+  p_service_id uuid,
+  p_online_orders_enabled boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  v_day public.business_days%rowtype;
+  v_service public.services%rowtype;
+  v_actor_id uuid;
+begin
+  if not public.is_creator() then
+    raise exception 'creator role required' using errcode = '42501';
+  end if;
+  select day.* into v_day
+    from public.services service
+    join public.business_days day on day.id = service.business_day_id
+   where service.id = p_service_id;
+  if not found then
+    raise exception 'service not found' using errcode = '22023';
+  end if;
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(v_day.business_date::text, 0));
+  select service.* into v_service from public.services service
+   where service.id = p_service_id for update;
+  if v_service.status <> 'closed' then
+    raise exception 'service is not closed' using errcode = 'P0001';
+  end if;
+  select * into v_day from public.business_days where id = v_service.business_day_id for update;
+  begin
+    v_actor_id := nullif(auth.jwt() ->> 'sub', '')::uuid;
+  exception when invalid_text_representation then
+    v_actor_id := null;
+  end;
+
+  update public.business_days set status = 'open', final_closed_at = null
+   where id = v_day.id returning * into v_day;
+  update public.services set
+    status = 'open', online_orders_enabled = coalesce(p_online_orders_enabled, true),
+    opened_at = clock_timestamp(), closed_at = null
+   where id = p_service_id returning * into v_service;
+  insert into public.service_sessions (service_id, opened_at, opened_by)
+  values (v_service.id, v_service.opened_at, v_actor_id);
+  insert into public.events (
+    actor_id, actor_kind, action, entity_type, entity_id, business_day_id, metadata
+  ) values (
+    v_actor_id, 'creator', 'service.reopened', 'service', v_service.id, v_day.id,
+    jsonb_build_object('shift', v_service.shift)
+  );
+
+  return jsonb_build_object(
+    'business_day_id', v_day.id, 'business_date', v_day.business_date,
+    'business_day_status', v_day.status, 'service_id', v_service.id,
+    'shift', v_service.shift, 'status', v_service.status,
+    'online_orders_enabled', v_service.online_orders_enabled,
+    'capacity_pizzas_hour', v_service.capacity_pizzas_hour,
+    'opened_at', v_service.opened_at, 'closed_at', v_service.closed_at
+  );
+end;
+$$;
+
+create or replace function public.close_service(
+  p_service_id uuid,
+  p_close_business_day boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  v_day public.business_days%rowtype;
+  v_service public.services%rowtype;
+  v_actor_id uuid;
+begin
+  if not public.is_creator() then
+    raise exception 'creator role required' using errcode = '42501';
+  end if;
+  select day.* into v_day
+    from public.services service
+    join public.business_days day on day.id = service.business_day_id
+   where service.id = p_service_id;
+  if not found then
+    raise exception 'service not found' using errcode = '22023';
+  end if;
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(v_day.business_date::text, 0));
+  select service.* into v_service from public.services service
+   where service.id = p_service_id for update;
+  if v_service.status <> 'open' then
+    raise exception 'service is not open' using errcode = 'P0001';
+  end if;
+  if exists (
+    select 1 from public.orders
+     where service_id = p_service_id and status in ('received', 'preparing')
+  ) then
+    raise exception 'service has active orders' using errcode = 'P0001';
+  end if;
+  select * into v_day from public.business_days where id = v_service.business_day_id for update;
+  begin
+    v_actor_id := nullif(auth.jwt() ->> 'sub', '')::uuid;
+  exception when invalid_text_representation then
+    v_actor_id := null;
+  end;
+
+  update public.services set
+    status = 'closed', online_orders_enabled = false, closed_at = clock_timestamp()
+   where id = p_service_id returning * into v_service;
+  update public.service_sessions set closed_at = v_service.closed_at, closed_by = v_actor_id
+   where service_id = p_service_id and closed_at is null;
+  if coalesce(p_close_business_day, false) then
+    if exists (
+      select 1 from public.services where business_day_id = v_day.id and status = 'open'
+    ) then
+      raise exception 'business day still has an open service' using errcode = 'P0001';
+    end if;
+    update public.business_days set status = 'closed', final_closed_at = v_service.closed_at
+     where id = v_day.id returning * into v_day;
+  end if;
+  insert into public.events (
+    actor_id, actor_kind, action, entity_type, entity_id, business_day_id, metadata
+  ) values (
+    v_actor_id, 'creator', 'service.closed', 'service', v_service.id, v_day.id,
+    jsonb_build_object('shift', v_service.shift, 'business_day_closed', coalesce(p_close_business_day, false))
+  );
+
+  return jsonb_build_object(
+    'business_day_id', v_day.id, 'business_date', v_day.business_date,
+    'business_day_status', v_day.status, 'service_id', v_service.id,
+    'shift', v_service.shift, 'status', v_service.status,
+    'online_orders_enabled', v_service.online_orders_enabled,
+    'capacity_pizzas_hour', v_service.capacity_pizzas_hour,
+    'opened_at', v_service.opened_at, 'closed_at', v_service.closed_at
+  );
+end;
+$$;
+
 -- These security-invoker views are the operational read models. Earlier
 -- revisions remain immutable while kitchens and reports resolve only the
 -- latest complete version.
@@ -1559,6 +1921,8 @@ for all to authenticated using (public.is_creator()) with check (public.is_creat
 
 create policy business_days_creator_access on public.business_days
 for all to authenticated using (public.is_creator()) with check (public.is_creator());
+create policy services_public_realtime_read on public.services
+for select to anon, authenticated using (public.is_open_business_day(business_day_id));
 create policy services_creator_access on public.services
 for all to authenticated using (public.is_creator()) with check (public.is_creator());
 create policy service_sessions_creator_access on public.service_sessions
@@ -1593,13 +1957,17 @@ grant select on table public.products, public.product_translations, public.ingre
   public.ingredient_translations, public.product_ingredients, public.allergens,
   public.product_allergens to anon, authenticated;
 grant select on table public.public_opening_status, public.public_closure_calendar to anon, authenticated;
+grant select on table public.services to anon;
 grant select on table public.current_order_items, public.current_order_item_changes,
   public.current_order_totals, public.current_payment_adjustments to authenticated;
 
 grant select, insert, update, delete on table public.products, public.product_translations,
   public.ingredients, public.ingredient_translations, public.product_ingredients,
-  public.allergens, public.product_allergens, public.business_days, public.services,
-  public.service_sessions, public.closures, public.orders to authenticated;
+  public.allergens, public.product_allergens, public.closures, public.orders to authenticated;
+revoke update on table public.products from authenticated;
+revoke update on table public.orders from authenticated;
+grant select on table public.business_days, public.services, public.service_sessions to authenticated;
+revoke insert, update, delete on table public.business_days, public.services, public.service_sessions from authenticated;
 grant select on table public.order_items, public.order_item_changes,
   public.order_revisions, public.payment_adjustments to authenticated;
 grant select, insert on table public.events to authenticated;
@@ -1616,6 +1984,8 @@ revoke all on function public.prevent_historical_mutation() from public, anon, a
 revoke all on function public.prevent_service_close_with_active_orders() from public, anon, authenticated;
 revoke all on function public.is_creator() from public, anon, authenticated;
 grant execute on function public.is_creator() to authenticated;
+revoke all on function public.is_open_business_day(uuid) from public, anon, authenticated;
+grant execute on function public.is_open_business_day(uuid) to anon, authenticated;
 revoke all on function public.next_order_sequence(uuid) from public, anon, authenticated;
 revoke all on function public.create_public_order(jsonb) from public, anon, authenticated;
 grant execute on function public.create_public_order(jsonb) to anon, authenticated;
@@ -1629,6 +1999,39 @@ revoke all on function public.record_payment_adjustment(uuid, text, integer, tex
 grant execute on function public.record_payment_adjustment(uuid, text, integer, text, text, text) to authenticated;
 revoke all on function public.transition_payment_adjustment(uuid, text) from public, anon, authenticated;
 grant execute on function public.transition_payment_adjustment(uuid, text) to authenticated;
+revoke all on function public.open_service(date, text, boolean, integer) from public, anon, authenticated;
+grant execute on function public.open_service(date, text, boolean, integer) to authenticated;
+revoke all on function public.reopen_service(uuid, boolean) from public, anon, authenticated;
+grant execute on function public.reopen_service(uuid, boolean) to authenticated;
+revoke all on function public.close_service(uuid, boolean) from public, anon, authenticated;
+grant execute on function public.close_service(uuid, boolean) to authenticated;
+revoke all on function public.save_product(uuid, integer, boolean) from public, anon, authenticated;
+grant execute on function public.save_product(uuid, integer, boolean) to authenticated;
+revoke all on function public.transition_order_status(uuid, text) from public, anon, authenticated;
+grant execute on function public.transition_order_status(uuid, text) to authenticated;
+revoke all on function public.set_service_online(uuid, boolean) from public, anon, authenticated;
+grant execute on function public.set_service_online(uuid, boolean) to authenticated;
+
+do $$
+declare
+  v_table text;
+begin
+  if exists (select 1 from pg_catalog.pg_publication where pubname = 'supabase_realtime') then
+    foreach v_table in array array[
+      'products', 'product_translations', 'ingredients', 'product_ingredients', 'product_allergens',
+      'business_days', 'services', 'service_sessions', 'orders', 'order_items',
+      'order_item_changes', 'order_revisions'
+    ] loop
+      if not exists (
+        select 1 from pg_catalog.pg_publication_tables
+         where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = v_table
+      ) then
+        execute pg_catalog.format('alter publication supabase_realtime add table public.%I', v_table);
+      end if;
+    end loop;
+  end if;
+end;
+$$;
 
 comment on function public.create_public_order(jsonb) is
   'Creates a public web order after validating service, catalog, customization and all prices server-side.';

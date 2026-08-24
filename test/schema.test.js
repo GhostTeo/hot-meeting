@@ -177,3 +177,40 @@ test('i movimenti pagamento usano versioni immutabili e una vista corrente', () 
   assert.match(sql, /create view public\.current_payment_adjustments/i);
   assert.match(sql, /grant execute on function public\.transition_payment_adjustment\(uuid, text\) to authenticated/i);
 });
+
+test('il lifecycle servizi passa da RPC Creator atomiche e non da scritture tabella', () => {
+  const sql = migrationSql();
+
+  assert.match(sql, /function public\.open_service\(\s*p_business_date date,\s*p_shift text,\s*p_online_orders_enabled boolean,\s*p_capacity_pizzas_hour integer\s*\)/is);
+  assert.match(sql, /function public\.reopen_service\(\s*p_service_id uuid,\s*p_online_orders_enabled boolean\s*\)/is);
+  assert.match(sql, /function public\.close_service\(\s*p_service_id uuid,\s*p_close_business_day boolean\s*\)/is);
+  assert.match(sql, /open_service[\s\S]*?pg_advisory_xact_lock/is);
+  assert.match(sql, /reopen_service[\s\S]*?insert into public\.service_sessions/is);
+  assert.match(sql, /close_service[\s\S]*?status in \('received', 'preparing'\)/is);
+  assert.match(sql, /revoke insert, update, delete on table public\.business_days, public\.services, public\.service_sessions from authenticated/i);
+  assert.match(sql, /grant execute on function public\.open_service\(date, text, boolean, integer\) to authenticated/i);
+  assert.match(sql, /grant execute on function public\.reopen_service\(uuid, boolean\) to authenticated/i);
+  assert.match(sql, /grant execute on function public\.close_service\(uuid, boolean\) to authenticated/i);
+  assert.match(sql, /function public\.save_product\(\s*p_product_id uuid,\s*p_price_cents integer,\s*p_available boolean\s*\)/is);
+  assert.match(sql, /grant execute on function public\.save_product\(uuid, integer, boolean\) to authenticated/i);
+  assert.match(sql, /function public\.transition_order_status\(\s*p_order_id uuid,\s*p_target_status text\s*\)/is);
+  assert.match(sql, /grant execute on function public\.transition_order_status\(uuid, text\) to authenticated/i);
+  assert.match(sql, /function public\.set_service_online\(\s*p_service_id uuid,\s*p_enabled boolean\s*\)/is);
+  assert.match(sql, /grant execute on function public\.set_service_online\(uuid, boolean\) to authenticated/i);
+});
+
+test('registra nel publication Realtime tutte le sorgenti riconciliate dal repository', () => {
+  const sql = migrationSql();
+
+  for (const table of [
+    'products', 'product_translations', 'ingredients', 'product_ingredients', 'product_allergens',
+    'business_days', 'services', 'service_sessions', 'orders', 'order_items',
+    'order_item_changes', 'order_revisions'
+  ]) {
+    assert.match(sql, new RegExp(`'${table}'`, 'i'), `sorgente Realtime ${table} mancante`);
+  }
+  assert.match(sql, /alter publication supabase_realtime add table public\.%I/i);
+  assert.match(sql, /function public\.is_open_business_day\(p_business_day_id uuid\)[\s\S]*?business_days[\s\S]*?status = 'open'/i);
+  assert.match(sql, /create policy services_public_realtime_read[\s\S]*?to anon, authenticated[\s\S]*?is_open_business_day\(business_day_id\)/i);
+  assert.match(sql, /grant select on table public\.services to anon/i);
+});

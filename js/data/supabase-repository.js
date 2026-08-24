@@ -49,6 +49,98 @@ function throwIfError(result) {
   return result.data;
 }
 
+function millis(value) {
+  return value ? new Date(value).getTime() : null;
+}
+
+function mapService(row) {
+  const id = row.service_id ?? row.id;
+  const openedAt = millis(row.opened_at);
+  return {
+    id,
+    databaseId: id,
+    businessDayId: row.business_day_id,
+    businessDate: row.business_date,
+    shift: row.shift,
+    status: row.status,
+    online: row.online_orders_enabled,
+    capacity: row.capacity_pizzas_hour ?? 90,
+    openedAt,
+    closedAt: millis(row.closed_at),
+    sessions: openedAt ? [{ openedAt, closedAt: millis(row.closed_at) }] : []
+  };
+}
+
+function mapServiceReceipt(row) {
+  return mapService({
+    id: row.service_id,
+    business_day_id: row.business_day_id,
+    business_date: row.business_date,
+    shift: row.shift,
+    status: row.status,
+    online_orders_enabled: row.online_orders_enabled,
+    capacity_pizzas_hour: row.capacity_pizzas_hour,
+    opened_at: row.opened_at,
+    closed_at: row.closed_at
+  });
+}
+
+function composeOrders(rows, itemRows, changeRows, totalRows, services) {
+  const changesByItem = new Map();
+  for (const change of changeRows) {
+    const list = changesByItem.get(change.order_item_id) ?? [];
+    list.push(change);
+    changesByItem.set(change.order_item_id, list);
+  }
+  const itemsByOrder = new Map();
+  for (const item of itemRows) {
+    const changes = changesByItem.get(item.id) ?? [];
+    const mapped = {
+      id: item.id,
+      name: item.product_name_snapshot,
+      quantity: item.quantity,
+      price: item.total_price_cents / 100,
+      note: item.note,
+      allergens: item.allergens_snapshot ?? [],
+      removed: changes.filter(change => change.change_type === 'removed').map(change => change.ingredient_name_snapshot),
+      additions: changes.filter(change => change.change_type === 'addition').map(change => ({
+        name: change.ingredient_name_snapshot,
+        price: change.unit_price_cents / 100,
+        quantity: change.quantity
+      }))
+    };
+    const list = itemsByOrder.get(item.order_id) ?? [];
+    list.push(mapped);
+    itemsByOrder.set(item.order_id, list);
+  }
+  const totals = new Map(totalRows.map(total => [total.order_id, total]));
+  const serviceById = new Map(Object.values(services).filter(Boolean).map(service => [service.id, service]));
+  return rows.map(row => {
+    const total = totals.get(row.id);
+    return {
+      id: row.id,
+      sequence: row.sequence,
+      businessDayId: row.business_day_id,
+      serviceId: row.service_id,
+      source: row.source.toUpperCase(),
+      customer: row.customer_name,
+      phone: row.customer_phone,
+      paymentMethod: row.payment_method,
+      payment: row.payment_method,
+      status: row.status,
+      shift: serviceById.get(row.service_id)?.shift,
+      createdAt: millis(row.created_at),
+      readyAt: millis(row.eta_ready_at),
+      total: (total?.total_cents ?? row.total_cents) / 100,
+      gross: (total?.gross_cents ?? row.gross_cents) / 100,
+      fee: (total?.fee_cents ?? row.fee_cents) / 100,
+      fees: (total?.fee_cents ?? row.fee_cents) / 100,
+      revision: total?.revision ?? 1,
+      items: itemsByOrder.get(row.id) ?? []
+    };
+  });
+}
+
 function normalizeOrderItem(item) {
   const changes = item.changes ?? [
     ...(item.removed ?? []).map(name => ({
@@ -99,13 +191,57 @@ export function createSupabaseRepository({ client, cache } = {}) {
       return menu;
     },
 
+    async getState() {
+      const tables = [
+        ['products', MENU_SELECT],
+        ['public_opening_status', '*'],
+        ['business_days', '*'],
+        ['services', '*'],
+        ['orders', '*'],
+        ['current_order_items', '*'],
+        ['current_order_item_changes', '*'],
+        ['current_order_totals', '*']
+      ];
+      const results = await Promise.all(tables.map(([table, columns]) => client.from(table).select(columns)));
+      const failed = results.slice(0, 2).find(result => result.error);
+      if (failed) {
+        if (cache) return cache.getState();
+        throw failed.error;
+      }
+      const [productRows, publicServices, dayRows, creatorServices, orderRows, itemRows, changeRows, totalRows] = results.map(result => result.error ? [] : result.data);
+      const menu = productRows.map(mapProduct);
+      const selectedServices = creatorServices.length ? creatorServices : publicServices;
+      const mappedServices = selectedServices.map(mapService);
+      const services = Object.fromEntries(mappedServices.map(service => [service.shift, service]));
+      const activeService = mappedServices.find(service => service.status === 'open') ?? null;
+      const day = dayRows.find(candidate => candidate.status === 'open') ?? dayRows[0] ?? null;
+      const publicDate = publicServices[0]?.business_date;
+      const activeDay = day
+        ? { id: day.id, date: day.business_date, status: day.status }
+        : publicDate ? { id: null, date: publicDate, status: 'open' } : null;
+      for (const service of Object.values(services)) {
+        if (!service.businessDate) service.businessDate = activeDay?.date;
+        if (!service.businessDayId) service.businessDayId = activeDay?.id;
+      }
+      const snapshot = {
+        menu,
+        services,
+        activeDay,
+        shift: activeService?.shift ?? null,
+        online: activeService?.online ?? false,
+        orders: composeOrders(orderRows, itemRows, changeRows, totalRows, services)
+      };
+      await cache?.replaceState(snapshot);
+      return snapshot;
+    },
+
     async saveProduct(product) {
-      const values = {};
-      if (product.price !== undefined) values.price_cents = Math.round(product.price * 100);
-      if (product.available !== undefined) values.available = product.available;
-      const identifier = product.databaseId ?? product.id;
-      const column = product.databaseId ? 'id' : 'slug';
-      const result = await client.from('products').update(values).eq(column, identifier).select().single();
+      if (!product.databaseId) throw new TypeError('Il prodotto remoto richiede un UUID databaseId');
+      const result = await client.rpc('save_product', {
+        p_product_id: product.databaseId,
+        p_price_cents: product.price === undefined ? null : Math.round(product.price * 100),
+        p_available: product.available ?? null
+      });
       const row = throwIfError(result);
       const saved = {
         ...product,
@@ -119,28 +255,36 @@ export function createSupabaseRepository({ client, cache } = {}) {
     },
 
     async openService(service) {
-      const openedAt = service.sessions?.at(-1)?.openedAt ?? service.openedAt ?? Date.now();
-      const result = await client.from('services').upsert({
-        id: service.id,
-        business_day_id: service.businessDayId ?? service.business_day_id,
-        shift: service.shift,
-        status: 'open',
-        online_orders_enabled: service.online ?? service.online_orders_enabled ?? true,
-        capacity_pizzas_hour: service.capacity ?? service.capacity_pizzas_hour ?? 90,
-        opened_at: new Date(openedAt).toISOString(),
-        closed_at: null
-      }).select().single();
-      return throwIfError(result);
+      const reopening = service.action === 'reopen';
+      const result = reopening
+        ? await client.rpc('reopen_service', {
+            p_service_id: service.databaseId ?? service.id,
+            p_online_orders_enabled: service.online ?? true
+          })
+        : await client.rpc('open_service', {
+            p_business_date: service.businessDate,
+            p_shift: service.shift,
+            p_online_orders_enabled: service.online ?? true,
+            p_capacity_pizzas_hour: service.capacity ?? 90
+          });
+      return mapServiceReceipt(throwIfError(result));
     },
 
-    async closeService(serviceOrId) {
+    async closeService(serviceOrId, { closeBusinessDay = false } = {}) {
       const id = typeof serviceOrId === 'object' ? serviceOrId.id : serviceOrId;
-      const result = await client.from('services').update({
-        status: 'closed',
-        online_orders_enabled: false,
-        closed_at: new Date().toISOString()
-      }).eq('id', id).select().single();
-      return throwIfError(result);
+      const result = await client.rpc('close_service', {
+        p_service_id: id,
+        p_close_business_day: closeBusinessDay
+      });
+      return mapServiceReceipt(throwIfError(result));
+    },
+
+    async setServiceOnline(serviceId, enabled) {
+      const result = await client.rpc('set_service_online', {
+        p_service_id: serviceId,
+        p_enabled: enabled
+      });
+      return mapServiceReceipt(throwIfError(result));
     },
 
     async createOrder(order) {
@@ -161,11 +305,25 @@ export function createSupabaseRepository({ client, cache } = {}) {
       return throwIfError(result);
     },
 
+    async updateOrderStatus(orderId, status) {
+      const result = await client.rpc('transition_order_status', {
+        p_order_id: orderId,
+        p_target_status: status
+      });
+      return throwIfError(result);
+    },
+
     subscribe(listener) {
       const channel = client.channel('hot-meeting-repository');
-      for (const table of ['products', 'services', 'orders', 'order_items', 'order_revisions']) {
+      const scopes = {
+        products: 'menu', product_translations: 'menu', ingredients: 'menu',
+        product_ingredients: 'menu', product_allergens: 'menu',
+        business_days: 'services', services: 'services', service_sessions: 'services',
+        orders: 'orders', order_items: 'orders', order_item_changes: 'orders', order_revisions: 'orders'
+      };
+      for (const [table, scope] of Object.entries(scopes)) {
         channel.on('postgres_changes', { event: '*', schema: 'public', table }, payload => {
-          listener({ entity: table, action: payload.eventType, value: payload.new, previous: payload.old });
+          listener({ type: 'repository.changed', scope });
         });
       }
       channel.subscribe();

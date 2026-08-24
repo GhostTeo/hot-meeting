@@ -27,10 +27,11 @@ export function repositoryContract(label, createRepository) {
     await repo.saveProduct({ id: 'margherita', available: false });
 
     const snapshot = repo.getSnapshot();
-    assert.equal(snapshot.services['dinner-1'].status, 'closed');
+    assert.equal(snapshot.services.dinner.id, 'dinner-1');
+    assert.equal(snapshot.services.dinner.status, 'closed');
     assert.equal(snapshot.orders[0].revision, 2);
     assert.deepEqual(snapshot.orders[0].items, [{ quantity: 2 }]);
-    assert.deepEqual(events.map(event => event.entity), ['service', 'order', 'order', 'service']);
+    assert.deepEqual(events.map(event => event.scope), ['services', 'orders', 'orders', 'services']);
   });
 }
 
@@ -113,6 +114,10 @@ function fakeSupabase({ rows = [], readError = null } = {}) {
     },
     async rpc(name, args) {
       calls.push({ operation: 'rpc', name, args });
+      if (name === 'save_product') return {
+        data: { id: args.p_product_id, slug: 'margherita', price_cents: args.p_price_cents, available: args.p_available },
+        error: null
+      };
       return { data: { order_id: 'remote-order', revision: 2 }, error: null };
     },
     channel(name) {
@@ -216,7 +221,7 @@ test('repository Supabase: instrada ordini e revisioni sulle RPC controllate', a
   });
 });
 
-test('repository Supabase: limita le scritture servizio alle colonne dello schema', async () => {
+test('repository Supabase: usa le RPC controllate per il lifecycle servizio', async () => {
   const client = fakeSupabase();
   const repo = createSupabaseRepository({ client });
 
@@ -226,15 +231,9 @@ test('repository Supabase: limita le scritture servizio alle colonne dello schem
   });
   await repo.closeService('service-1');
 
-  assert.deepEqual(client.calls.find(call => call.operation === 'upsert').values, {
-    id: 'service-1', business_day_id: 'day-1', shift: 'dinner', status: 'open',
-    online_orders_enabled: true, capacity_pizzas_hour: 90,
-    opened_at: new Date(1_777_000_000_000).toISOString(), closed_at: null
-  });
-  assert.deepEqual(client.calls.find(call => call.operation === 'update').values, {
-    status: 'closed', online_orders_enabled: false,
-    closed_at: client.calls.find(call => call.operation === 'update').values.closed_at
-  });
+  assert.deepEqual(client.calls.filter(call => call.operation === 'rpc').map(call => call.name), [
+    'open_service', 'close_service'
+  ]);
 });
 
 test('repository Supabase: sottoscrive tutte le fonti realtime e rimuove il canale', async () => {
@@ -244,7 +243,11 @@ test('repository Supabase: sottoscrive tutte le fonti realtime e rimuove il cana
   const unsubscribe = repo.subscribe(() => {});
   await unsubscribe();
 
-  assert.deepEqual(client.realtimeTables, ['products', 'services', 'orders', 'order_items', 'order_revisions']);
+  assert.deepEqual(client.realtimeTables, [
+    'products', 'product_translations', 'ingredients', 'product_ingredients', 'product_allergens',
+    'business_days', 'services', 'service_sessions', 'orders', 'order_items',
+    'order_item_changes', 'order_revisions'
+  ]);
   assert.equal(client.removedChannel.name, 'hot-meeting-repository');
 });
 

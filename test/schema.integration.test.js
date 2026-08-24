@@ -463,6 +463,49 @@ test('schema Supabase: comportamenti PostgreSQL e policy', {
       assert.equal(creatorSql('select count(*) from public.current_payment_adjustments;').stdout.trim().split('\n').at(-1), '2');
     });
 
+    await t.test('RPC Creator gestiscono apertura, blocco chiusura e riapertura atomiche', () => {
+      resetOperationalData();
+
+      const denied = psql(`
+        set role authenticated;
+        select public.open_service(date '2026-08-24', 'dinner', true, 90);
+      `, { allowFailure: true });
+      assert.notEqual(denied.status, 0);
+      assert.match(denied.stderr, /creator role required/i);
+
+      const opened = receipt(creatorSql(`
+        select public.open_service(date '2026-08-24', 'dinner', true, 90);
+      `));
+      assert.match(opened.service_id, /^[0-9a-f-]{36}$/i);
+      assert.match(opened.business_day_id, /^[0-9a-f-]{36}$/i);
+      assert.equal(opened.status, 'open');
+      assert.equal(creatorSql(`select count(*) from public.service_sessions where service_id = '${opened.service_id}';`).stdout.trim().split('\n').at(-1), '1');
+      assert.equal(creatorSql(`select count(*) from public.events where entity_id = '${opened.service_id}' and action = 'service.opened';`).stdout.trim().split('\n').at(-1), '1');
+
+      const direct = creatorSql(`
+        update public.services set online_orders_enabled = false where id = '${opened.service_id}';
+      `, true);
+      assert.notEqual(direct.status, 0);
+
+      const created = receipt(callPublicOrder(basePayload(
+        '70000000-0000-4000-8000-000000000091', { service_id: opened.service_id }
+      )));
+      const blocked = creatorSql(`select public.close_service('${opened.service_id}', true);`, true);
+      assert.notEqual(blocked.status, 0);
+      assert.match(blocked.stderr, /active orders/i);
+
+      creatorSql(`select public.transition_order_status('${created.order_id}', 'ready');`);
+      const closed = receipt(creatorSql(`select public.close_service('${opened.service_id}', true);`));
+      assert.equal(closed.status, 'closed');
+      assert.equal(closed.business_day_status, 'closed');
+
+      const reopened = receipt(creatorSql(`select public.reopen_service('${opened.service_id}', false);`));
+      assert.equal(reopened.status, 'open');
+      assert.equal(reopened.business_day_status, 'open');
+      assert.equal(reopened.online_orders_enabled, false);
+      assert.equal(creatorSql(`select count(*) from public.service_sessions where service_id = '${opened.service_id}';`).stdout.trim().split('\n').at(-1), '2');
+    });
+
     await t.test('snapshot allergeni resta invariato dopo modifiche catalogo', () => {
       resetOperationalData();
       openService();

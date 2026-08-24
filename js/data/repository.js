@@ -3,11 +3,14 @@ import { createSupabaseRepository } from './supabase-repository.js';
 
 export const REPOSITORY_METHODS = Object.freeze([
   'getMenu',
+  'getState',
   'saveProduct',
   'openService',
   'closeService',
+  'setServiceOnline',
   'createOrder',
   'reviseOrder',
+  'updateOrderStatus',
   'subscribe'
 ]);
 

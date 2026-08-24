@@ -22,8 +22,8 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
     }
   }
 
-  function emit(entity, action, value) {
-    const event = copy({ entity, action, value });
+  function emit(scope) {
+    const event = { type: 'repository.changed', scope };
     for (const listener of listeners) listener(event);
   }
 
@@ -38,7 +38,7 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       else state.menu[index] = { ...state.menu[index], ...copy(product) };
       const saved = state.menu[index === -1 ? state.menu.length - 1 : index];
       persist();
-      emit('menu', 'saved', saved);
+      emit('menu');
       return copy(saved);
     },
 
@@ -48,28 +48,50 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       return copy(state.menu);
     },
 
+    async replaceState(snapshot) {
+      Object.assign(state, copy(snapshot));
+      persist();
+      return copy(state);
+    },
+
+    async getState() {
+      return copy(state);
+    },
+
     async openService(service) {
       const opened = { ...copy(service), status: 'open' };
-      state.services[opened.id] = opened;
+      state.services[opened.shift ?? opened.id] = opened;
       persist();
-      emit('service', 'opened', opened);
+      emit('services');
       return copy(opened);
     },
 
     async closeService(serviceOrId) {
       const id = typeof serviceOrId === 'object' ? serviceOrId.id : serviceOrId;
-      const closed = { ...state.services[id], status: 'closed' };
-      state.services[id] = closed;
+      const entry = Object.entries(state.services).find(([, service]) => service?.id === id);
+      if (!entry) throw new Error(`Servizio ${id} non trovato`);
+      const [key, service] = entry;
+      const closed = { ...service, status: 'closed' };
+      state.services[key] = closed;
       persist();
-      emit('service', 'closed', closed);
+      emit('services');
       return copy(closed);
+    },
+
+    async setServiceOnline(serviceId, enabled) {
+      const service = state.services[serviceId] ?? Object.values(state.services).find(candidate => candidate?.id === serviceId);
+      if (!service) throw new Error(`Servizio ${serviceId} non trovato`);
+      service.online = enabled;
+      persist();
+      emit('services');
+      return copy(service);
     },
 
     async createOrder(order) {
       const created = { revision: 1, status: 'preparing', ...copy(order) };
       state.orders.push(created);
       persist();
-      emit('order', 'created', created);
+      emit('orders');
       return copy(created);
     },
 
@@ -83,8 +105,17 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       };
       state.orders[index] = revised;
       persist();
-      emit('order', 'revised', revised);
+      emit('orders');
       return copy(revised);
+    },
+
+    async updateOrderStatus(orderId, status) {
+      const order = state.orders.find(candidate => String(candidate.id) === String(orderId));
+      if (!order) throw new Error(`Ordine ${orderId} non trovato`);
+      order.status = status;
+      persist();
+      emit('orders');
+      return copy(order);
     },
 
     subscribe(listener) {

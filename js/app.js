@@ -4,18 +4,20 @@ import { dailyReport } from './reports.js';
 import { addExceptionalOpening, addHoliday, calendarPanel, updateWeeklyClosure } from './views/calendar.js';
 import { buildCloseDialog, closeService, nextServiceSequence, servicePanel, shiftLabel, startServiceWithCalendar } from './views/service.js';
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
-import { createRepository } from './data/repository.js';
+import { appConfig } from './config.js';
+import { bootstrapDataLayer, isCreatorSession } from './bootstrap.js';
+import { hydrateApplicationState } from './app-state.js';
 
 const defaults={view:'customer',creator:false,shift:null,capacity:90,online:true,cart:[],calendar:{closedWeekdays:[2],exceptions:[]},services:{lunch:null,dinner:null},activeDay:null,menu:[
  {id:'margherita',type:'pizza',name:'Margherita',price:8,emoji:'🍕',ingredients:['Pomodoro','Mozzarella','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Mozzarella di bufala',price:2},{name:'Prosciutto cotto',price:2},{name:'Olive',price:1}],available:true},
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
  {id:'cola',type:'drink',name:'Cola',price:3,emoji:'🥤',ingredients:[],available:true}],orders:[]};
-let state=load(); const repository=createRepository({client:globalThis.hotMeetingSupabaseClient,storage:localStorage,initialState:{menu:state.menu,services:state.services,orders:state.orders}}); let adminSection='service'; let customizing=null; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null;
+let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null;
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
-async function refreshRepositoryMenu(){try{state.menu=mergeMenuDefaults(await repository.getMenu(),defaults.menu);save();render()}catch{reportRepositoryError()}}
+async function refreshRepositoryState(){try{state=await hydrateApplicationState(state,repository);save();render()}catch{reportRepositoryError()}}
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(v)}
 function toast(text){const el=document.querySelector('#toast');el.textContent=text;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
 function pizzasAhead(){return state.orders.filter(o=>o.status==='preparing').reduce((n,o)=>n+o.items.reduce((s,i)=>s+i.quantity,0),0)}
@@ -28,7 +30,7 @@ function products(type){const closed=currentClosure().closed;return state.menu.f
 function cart(){const total=state.cart.reduce((n,i)=>n+i.price,0),closed=currentClosure().closed;return `<button class="btn secondary" id="cart-close">Chiudi</button><h2>Il tuo ordine</h2>${state.cart.map((i,x)=>`<div class="card"><b>${i.name}</b><p>${i.removed?.length?`Senza: ${i.removed.join(', ')}<br>`:''}${i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}× ${a.name}`).join(', ')||''}</p><p>${i.note||'Nessuna nota'}</p><button data-remove="${x}">Rimuovi</button></div>`).join('')||'<p>Il carrello è vuoto.</p>'}<h3>Totale ${money(total)}</h3>${state.cart.length?`<div class="field"><label>Nome<input id="name"></label></div><div class="field"><label>Telefono<input id="phone" inputmode="tel"></label></div><div class="field"><span>Pagamento dimostrativo</span><div class="payment-grid">${DEMO_PAYMENT_METHODS.map((method,index)=>`<label class="payment-option"><input type="radio" name="payment" value="${method.id}" ${index===0?'checked':''}> <b>${method.label}</b></label>`).join('')}</div></div><button class="btn primary" id="checkout" ${closed?'disabled':''}>${closed?'Ordini chiusi':'Conferma ordine demo'}</button>`:''}`}
 
 function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="Personalizza ${p.name}"><div class="modal-head"><div><span class="eyebrow">Personalizza la tua pizza</span><h2>${p.name}</h2></div><button class="btn secondary" id="custom-close">Chiudi</button></div><div class="modal-photo">${p.emoji}</div><h3>Ingredienti inclusi</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row"><span>${ingredient}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'−'}</button><b>${customizing.removed.includes(ingredient)?'TOLTO':'INCLUSO'}</b></div></div>`).join('')}<h3>Aggiunte</h3>${customizing.additions.map((addition,index)=>`<div class="option-row"><span>${addition.name} · ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}">−</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}<div class="allergens"><b>Allergeni: ${(p.allergens||[]).join(', ')||'nessuno dichiarato'}</b><p>In caso di allergie o intolleranze scrivilo nelle note e contatta il locale. Può verificarsi contaminazione crociata.</p></div><div class="field"><label>Note per questa pizza<textarea id="custom-note" rows="3" placeholder="Es. allergia alle noci, celiaco, ben cotta…">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">Aggiungi al carrello · ${money(price)}</button></section></div>`}
-function creator(){if(!state.creator)return `<div class="card" style="max-width:440px;margin:auto"><span class="eyebrow">Area riservata</span><h1 style="font-size:44px">Creator</h1><div class="field"><label>Username<input id="user"></label></div><div class="field"><label>Password<input id="pass" type="password"></label></div><button class="btn primary" id="login">Accedi</button></div>`;return `<div class="admin"><aside class="sidebar">${['service','calendar','orders','menu','report'].map(s=>`<button class="btn ${adminSection===s?'primary':'secondary'} admin-nav" data-section="${s}">${({service:'Servizio',calendar:'Calendario',orders:'Ordini',menu:'Menu',report:'Report'})[s]}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
+function creator(){if(!state.creator)return `<div class="card" style="max-width:440px;margin:auto"><span class="eyebrow">Area riservata</span><h1 style="font-size:44px">Creator</h1><div class="field"><label>${runtime.mode==='supabase'?'Email':'Username'}<input id="user" ${runtime.mode==='supabase'?'type="email" autocomplete="username"':''}></label></div><div class="field"><label>Password<input id="pass" type="password" autocomplete="current-password"></label></div><button class="btn primary" id="login">Accedi</button></div>`;return `<div class="admin"><aside class="sidebar">${['service','calendar','orders','menu','report'].map(s=>`<button class="btn ${adminSection===s?'primary':'secondary'} admin-nav" data-section="${s}">${({service:'Servizio',calendar:'Calendario',orders:'Ordini',menu:'Menu',report:'Report'})[s]}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
 function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='orders')return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dal ristorante</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div>${state.orders.map(orderCard).join('')||'<p>Nessun ordine.</p>'}`;if(adminSection==='menu')return `<h1>Menu</h1><div class="grid">${state.menu.map(p=>`<article class="card"><h2>${p.name}</h2><p>${money(p.price)}</p><button class="btn secondary availability" data-id="${p.id}">${p.available?'Disponibile':'Non disponibile'}</button></article>`).join('')}</div>`;const lunch=summarizeOrders(state.orders,'lunch'),dinner=summarizeOrders(state.orders,'dinner');return `<h1>Report</h1><div class="grid">${reportCard('Pranzo',lunch)}${reportCard('Serale',dinner)}${reportCard('Giornata',{orders:lunch.orders+dinner.orders,pizzas:lunch.pizzas+dinner.pizzas,gross:lunch.gross+dinner.gross,fees:lunch.fees+dinner.fees,net:lunch.net+dinner.net})}</div>`}
 function reportCard(label,r){return `<article class="card"><span class="eyebrow">${label}</span><div class="metric">${money(r.net)}</div><p>${r.orders} ordini · ${r.pizzas} pizze</p><small>Lordo ${money(r.gross)} · Trattenute ${money(r.fees)}</small></article>`}
 function itemDetails(item){const changes=customizationLines(item);return `<p><b>${item.quantity}× ${item.name}</b>${changes.map(line=>`<br>${line}`).join('')}${item.note?`<br><span class="${/allerg|celiac|intoller/i.test(item.note)?'warning':''}">${item.note}</span>`:''}</p>`}
@@ -79,9 +81,9 @@ function bind(){
     state.orders.push(order);void repository.createOrder(order).catch(reportRepositoryError);
     state.cart=[];save();render();toast('Ordine demo inviato in cucina!');
   });
-  document.querySelector('#login')?.addEventListener('click',()=>{if(document.querySelector('#user').value==='creator'&&document.querySelector('#pass').value==='pizza143'){state.creator=true;save();render()}else toast('Credenziali non corrette')});
+  document.querySelector('#login')?.addEventListener('click',async()=>{try{const session=await runtime.auth.signIn(document.querySelector('#user').value,document.querySelector('#pass').value);state.creator=isCreatorSession(session);await refreshRepositoryState()}catch{toast('Credenziali non corrette')}});
   document.querySelectorAll('.admin-nav').forEach(b=>b.onclick=()=>{adminSection=b.dataset.section;render()});
-  document.querySelectorAll('.service-action').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.service-action').forEach(b=>b.onclick=async()=>{
     const shift=b.dataset.shift,action=b.dataset.serviceAction,existing=state.services[shift];
     if(action==='close'){
       const summary=dailyReport(state.orders,existing.businessDate,shift);
@@ -94,15 +96,14 @@ function bind(){
     const result=startServiceWithCalendar(state,shift,Date.now(),action,state.calendar);
     if(!result.started)return toast(result.closure.message||'Chiuso per riposo settimanale');
     state=result.state;
-    void repository.openService(state.services[shift]).catch(reportRepositoryError);
-    save();render();toast(result.mode==='reopen'?'Servizio riaperto.':result.mode==='new-day'?'Nuova giornata aperta.':'Servizio aperto.');
+    try{await repository.openService({...state.services[shift],action:result.mode==='reopen'?'reopen':'open',online:state.online,capacity:state.capacity});if(runtime.mode==='supabase')await refreshRepositoryState();else{save();render()};toast(result.mode==='reopen'?'Servizio riaperto.':result.mode==='new-day'?'Nuova giornata aperta.':'Servizio aperto.')}catch{reportRepositoryError()}
   });
   document.querySelectorAll('[data-dialog-action]').forEach(b=>b.onclick=()=>{
     if(b.dataset.dialogAction==='confirm-close'){
       const shift=pendingDialog.shift,service=state.services[shift];
       if(service?.id===pendingDialog.serviceId){
         state.services[shift]=closeService(service);
-        void repository.closeService(service.id).catch(reportRepositoryError);
+        void repository.closeService(service.id,{closeBusinessDay:shift==='dinner'&&document.querySelector('#close-business-day')?.checked}).then(()=>runtime.mode==='supabase'?refreshRepositoryState():undefined).catch(reportRepositoryError);
         if(state.shift===shift)state.shift=null;
         if(shift==='dinner'&&document.querySelector('#close-business-day')?.checked)state.activeDay={...state.activeDay,date:service.businessDate,status:'closed'};
         save();toast(shift==='dinner'?'Servizio serale chiuso.':'Servizio pranzo chiuso.');
@@ -114,13 +115,14 @@ function bind(){
   document.querySelector('#holiday-form')?.addEventListener('submit',event=>{event.preventDefault();const form=new FormData(event.currentTarget),holiday={from:form.get('from'),to:form.get('to'),message:form.get('message')};if(holiday.from>holiday.to)return toast('La data finale deve seguire quella iniziale.');state.calendar=addHoliday(state.calendar,holiday);save();render();toast('Periodo di ferie aggiunto.')});
   document.querySelector('#exceptional-opening-form')?.addEventListener('submit',event=>{event.preventDefault();const form=new FormData(event.currentTarget);state.calendar=addExceptionalOpening(state.calendar,{date:form.get('date'),message:form.get('message')});save();render();toast('Apertura straordinaria aggiunta.')});
   document.querySelectorAll('.remove-calendar-exception').forEach(b=>b.onclick=()=>{state.calendar={...state.calendar,exceptions:state.calendar.exceptions.filter((_,index)=>index!==Number(b.dataset.index))};save();render();toast('Eccezione rimossa.')});
-  document.querySelector('#toggle-online')?.addEventListener('click',()=>{state.online=!state.online;save();render()});
+  document.querySelector('#toggle-online')?.addEventListener('click',async()=>{const service=state.services[state.shift];if(!service)return toast('Apri prima un servizio.');try{await repository.setServiceOnline(service.id,!state.online);if(runtime.mode==='supabase')await refreshRepositoryState();else{state.online=!state.online;save();render()}}catch{reportRepositoryError()}});
   document.querySelector('#external')?.addEventListener('click',()=>{if(!state.shift)return toast('Apri prima un servizio.');toast('La schermata ordine ristorante sarà il prossimo flusso operativo.')});
   document.querySelectorAll('.availability').forEach(b=>b.onclick=()=>{const p=state.menu.find(x=>x.id===b.dataset.id);p.available=!p.available;save();render();void repository.saveProduct(p).catch(reportRepositoryError)});
-  document.querySelectorAll('.ready').forEach(b=>b.onclick=()=>{state.orders.find(o=>String(o.id)===b.dataset.id).status='ready';save();render()});
+  document.querySelectorAll('.ready').forEach(b=>b.onclick=async()=>{try{await repository.updateOrderStatus(b.dataset.id,'ready');if(runtime.mode==='supabase')await refreshRepositoryState();else{state.orders.find(o=>String(o.id)===b.dataset.id).status='ready';save();render()}}catch{reportRepositoryError()}});
   const dialog=document.querySelector('.dialog-card');
   if(dialog)releaseDialogTrap=trapDialogFocus(dialog,finishDialog);
 }
+try{state=await hydrateApplicationState(state,repository);save()}catch{reportRepositoryError()}
 render();setInterval(()=>{if(state.view==='kitchen')render()},1000);
-repository.subscribe(event=>{if(event.entity==='products')void refreshRepositoryMenu()});
-void refreshRepositoryMenu();
+repository.subscribe(()=>{void refreshRepositoryState()});
+runtime.auth.onChange(session=>{state.creator=isCreatorSession(session);void refreshRepositoryState()});
