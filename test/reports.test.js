@@ -10,6 +10,7 @@ import {
 const sampleOrders = [
   {
     businessDate: '2026-01-01',
+    status: 'ready',
     shift: 'lunch',
     pizzas: 2,
     gross: 20,
@@ -18,6 +19,7 @@ const sampleOrders = [
   },
   {
     businessDate: '2026-06-30',
+    status: 'collected',
     shift: 'dinner',
     items: [{ quantity: 2 }, { quantity: 1 }],
     gross: 30,
@@ -26,6 +28,7 @@ const sampleOrders = [
   },
   {
     businessDate: '2026-07-01',
+    status: 'ready',
     shift: 'lunch',
     pizzas: 5,
     gross: 50,
@@ -34,6 +37,7 @@ const sampleOrders = [
   },
   {
     businessDate: '2025-12-31',
+    status: 'collected',
     shift: 'dinner',
     pizzas: 1,
     gross: 10,
@@ -80,6 +84,25 @@ test('restituisce un report giornaliero filtrabile per turno', () => {
     supplements: 3,
     refunds: 0,
     net: 22
+  });
+});
+
+test('esclude ordini in preparazione e annullati dai totali', () => {
+  const orders = [
+    { businessDate: '2026-08-24', status: 'ready', shift: 'lunch', pizzas: 1, gross: 10, fees: 1 },
+    { businessDate: '2026-08-24', status: 'preparing', shift: 'lunch', pizzas: 2, gross: 20, fees: 2 },
+    { businessDate: '2026-08-24', status: 'cancelled', shift: 'lunch', pizzas: 3, gross: 30, fees: 3 }
+  ];
+
+  assert.deepEqual(dailyReport(orders, '2026-08-24', 'lunch'), {
+    period: { from: '2026-08-24', to: '2026-08-24' },
+    orders: 1,
+    pizzas: 1,
+    gross: 10,
+    fees: 1,
+    supplements: 0,
+    refunds: 0,
+    net: 9
   });
 });
 

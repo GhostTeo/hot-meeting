@@ -1,3 +1,5 @@
+const COMPLETED_ORDER_STATUSES = new Set(['ready', 'collected']);
+
 function isoDate(year, month, day) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
@@ -23,6 +25,7 @@ function adjustmentTotals(adjustments = []) {
 function reportForPeriod(orders, period, shift) {
   const report = (orders || [])
     .filter(order => order.businessDate >= period.from && order.businessDate <= period.to)
+    .filter(order => COMPLETED_ORDER_STATUSES.has(order.status))
     .filter(order => !shift || order.shift === shift)
     .reduce((total, order) => {
       const adjustments = adjustmentTotals(order.adjustments);
