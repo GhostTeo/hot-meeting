@@ -48,3 +48,16 @@ test('un’eccezione per data prevale sulla chiusura ricorrente', () => {
     { closed: false, message: 'Apertura straordinaria' }
   );
 });
+
+test('una chiusura ferie copre ogni data dell’intervallo inclusivo', () => {
+  const exceptions = [{ from: '2026-08-25', to: '2026-08-29', closed: true, message: 'Ferie' }];
+  assert.deepEqual(resolveClosure('2026-08-25', [], exceptions), { closed: true, message: 'Ferie' });
+  assert.deepEqual(resolveClosure('2026-08-29', [], exceptions), { closed: true, message: 'Ferie' });
+});
+
+test('un intervallo di apertura straordinaria prevale sulla chiusura settimanale', () => {
+  assert.deepEqual(
+    resolveClosure('2026-08-27', [4], [{ from: '2026-08-25', to: '2026-08-29', closed: false, message: 'Apertura straordinaria' }]),
+    { closed: false, message: 'Apertura straordinaria' }
+  );
+});
