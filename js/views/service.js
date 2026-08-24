@@ -44,10 +44,26 @@ export function isReopenEligible(service, now = Date.now()) {
   );
 }
 
+function belongsToBusinessDay(service, activeDay) {
+  if (!service || !activeDay) return false;
+  if (service.businessDayId && activeDay.id) return service.businessDayId === activeDay.id;
+  if (activeDay.id && !service.businessDayId) {
+    return activeDay.id === `legacy-${activeDay.date}` && service.businessDate === activeDay.date;
+  }
+  return service.businessDate === activeDay.date;
+}
+
+function canReopenSelectedService(state, shift, now) {
+  const service = state.services[shift];
+  const newerDaySelected = state.activeDay && !belongsToBusinessDay(service, state.activeDay);
+  return !newerDaySelected && isReopenEligible(service, now);
+}
+
 function transitionMode(state, shift, now, action) {
-  if (action === 'reopen' && isReopenEligible(state.services[shift], now)) return 'reopen';
-  if (action === 'new-day' || state.activeDay?.status !== 'open') return 'new-day';
-  return 'open';
+  if (action === 'reopen' && canReopenSelectedService(state, shift, now)) return 'reopen';
+  if (state.activeDay?.status === 'open') return 'open';
+  if (action === 'open' && state.activeDay && !belongsToBusinessDay(state.services[shift], state.activeDay)) return 'open';
+  return 'new-day';
 }
 
 export function startServiceTransition(state, shift, now = Date.now(), action = 'open') {
@@ -57,7 +73,7 @@ export function startServiceTransition(state, shift, now = Date.now(), action = 
   const newDay = mode === 'new-day';
   const businessDate = reopening
     ? existing.businessDate
-    : resolveBusinessDate(now, newDay ? null : state.activeDay);
+    : newDay ? resolveBusinessDate(now, null) : state.activeDay.date;
   const openedAt = new Date(now).getTime();
   const businessDayId = reopening
     ? (existing.businessDayId || state.activeDay?.id || `legacy-${businessDate}`)
@@ -116,17 +132,29 @@ export function buildCloseDialog(service, orders, summary) {
   };
 }
 
-export function servicePanel(services = {}, now = Date.now()) {
+export function servicePanel(state, now = Date.now()) {
+  const services = state.services || {};
+  const selectedDay = state.activeDay || null;
   return `<h1>Servizio</h1><div class="grid service-grid">${['lunch', 'dinner'].map(shift => {
-    const service = services[shift];
+    const historicalService = services[shift];
+    const service = selectedDay && !belongsToBusinessDay(historicalService, selectedDay)
+      ? null
+      : historicalService;
     const isOpen = service?.status === 'open';
-    const canReopen = isReopenEligible(service, now);
+    const canReopen = canReopenSelectedService(state, shift, now);
     const actions = isOpen
       ? `<button class="btn secondary service-action" data-service-action="close" data-shift="${shift}">Chiudi servizio</button>`
       : canReopen
-        ? `<div class="service-actions"><button class="btn primary service-action" data-service-action="reopen" data-shift="${shift}">Riapri servizio</button><button class="btn secondary service-action" data-service-action="new-day" data-shift="${shift}">Avvia nuova giornata</button></div>`
+        ? selectedDay?.status === 'open'
+          ? `<button class="btn primary service-action" data-service-action="reopen" data-shift="${shift}">Riapri servizio</button>`
+          : `<div class="service-actions"><button class="btn primary service-action" data-service-action="reopen" data-shift="${shift}">Riapri servizio</button><button class="btn secondary service-action" data-service-action="new-day" data-shift="${shift}">Avvia nuova giornata</button></div>`
         : `<button class="btn primary service-action" data-service-action="open" data-shift="${shift}">Apri servizio</button>`;
-    return `<article class="card"><span class="eyebrow">${shift === 'lunch' ? '☀️ Pranzo' : '🌙 Serale'}</span><h2>${isOpen ? 'APERTO' : 'Chiuso'}</h2>${service ? `<p>Giornata operativa <b>${service.businessDate}</b></p>` : '<p>Nessuna sessione per la giornata.</p>'}${actions}</article>`;
+    const context = service
+      ? `<p>Giornata operativa <b>${service.businessDate}</b></p>`
+      : selectedDay
+        ? `<p>Giornata operativa <b>${selectedDay.date}</b> · turno non aperto</p>`
+        : '<p>Nessuna sessione per la giornata.</p>';
+    return `<article class="card"><span class="eyebrow">${shift === 'lunch' ? '☀️ Pranzo' : '🌙 Serale'}</span><h2>${isOpen ? 'APERTO' : 'Chiuso'}</h2>${context}${actions}</article>`;
   }).join('')}</div>`;
 }
 

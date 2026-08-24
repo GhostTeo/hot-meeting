@@ -114,15 +114,118 @@ test('la validazione calendario usa la data operativa scelta dalla transizione',
 });
 
 test('il pannello offre nuova giornata insieme alla riapertura solo nella finestra valida', () => {
-  const services = { lunch: null, dinner: closedDinner };
+  const state = {
+    activeDay: { date: '2026-08-24', status: 'closed' },
+    services: { lunch: null, dinner: closedDinner }
+  };
 
-  const withinWindow = servicePanel(services, '2026-08-25T01:00:00+02:00');
-  const daysLater = servicePanel(services, '2026-08-27T10:00:00+02:00');
+  const withinWindow = servicePanel(state, '2026-08-25T01:00:00+02:00');
+  const daysLater = servicePanel(state, '2026-08-27T10:00:00+02:00');
 
   assert.match(withinWindow, /Riapri servizio/);
   assert.match(withinWindow, /Avvia nuova giornata/);
   assert.doesNotMatch(daysLater, /Riapri servizio/);
   assert.match(daysLater, /Apri servizio/);
+});
+
+test('iniziare una nuova giornata dal pranzo sopprime la riapertura della cena storica', () => {
+  const oldDay = {
+    activeDay: { id: 'day-24', date: '2026-08-24', status: 'closed' },
+    orders: [{ businessDayId: 'day-24', businessDate: '2026-08-24', sequence: 18 }],
+    services: { lunch: null, dinner: { ...closedDinner, businessDayId: 'day-24' } },
+    shift: null
+  };
+
+  const newDay = startServiceTransition(oldDay, 'lunch', '2026-08-25T01:00:00+02:00', 'new-day');
+  const panel = servicePanel(newDay, '2026-08-25T01:05:00+02:00');
+
+  assert.doesNotMatch(panel, /Riapri servizio/);
+  assert.doesNotMatch(panel, /Avvia nuova giornata/);
+  assert.match(panel, /data-shift="dinner">Apri servizio/);
+});
+
+test('un servizio legacy della stessa data non sostituisce l’identità nuova selezionata', () => {
+  const oldDay = {
+    activeDay: { date: '2026-08-24', status: 'closed' },
+    orders: [],
+    services: { lunch: null, dinner: closedDinner },
+    shift: null
+  };
+
+  const newIdentity = startServiceTransition(oldDay, 'lunch', '2026-08-24T20:00:00+02:00', 'new-day');
+  const panel = servicePanel(newIdentity, '2026-08-24T20:05:00+02:00');
+
+  assert.doesNotMatch(panel, /data-shift="dinner">Riapri servizio/);
+  assert.match(panel, /data-shift="dinner">Apri servizio/);
+});
+
+test('una giornata già selezionata non propone di crearne un’altra dopo la chiusura del turno', () => {
+  const oldDay = {
+    activeDay: { id: 'day-24', date: '2026-08-24', status: 'closed' },
+    orders: [],
+    services: { lunch: null, dinner: { ...closedDinner, businessDayId: 'day-24' } },
+    shift: null
+  };
+  const lunchOpen = startServiceTransition(oldDay, 'lunch', '2026-08-25T01:00:00+02:00', 'new-day');
+  const selectedDay = {
+    ...lunchOpen,
+    shift: null,
+    services: {
+      ...lunchOpen.services,
+      lunch: closeService(lunchOpen.services.lunch, new Date('2026-08-25T01:30:00+02:00').getTime())
+    }
+  };
+
+  const panel = servicePanel(selectedDay, '2026-08-25T01:35:00+02:00');
+
+  assert.match(panel, /Riapri servizio/);
+  assert.doesNotMatch(panel, /Avvia nuova giornata/);
+  assert.match(panel, /data-shift="dinner">Apri servizio/);
+});
+
+test('aprire la cena continua identità data e progressivo della nuova giornata selezionata', () => {
+  const oldDay = {
+    activeDay: { id: 'day-24', date: '2026-08-24', status: 'closed' },
+    orders: [],
+    services: { lunch: null, dinner: { ...closedDinner, businessDayId: 'day-24' } },
+    shift: null
+  };
+  const lunchOpen = startServiceTransition(oldDay, 'lunch', '2026-08-25T01:00:00+02:00', 'new-day');
+  const withLunchOrder = {
+    ...lunchOpen,
+    shift: null,
+    orders: [{
+      businessDayId: lunchOpen.activeDay.id,
+      businessDate: '2026-08-25',
+      sequence: 1
+    }]
+  };
+
+  const dinnerOpen = startServiceTransition(withLunchOrder, 'dinner', '2026-08-25T01:10:00+02:00', 'open');
+
+  assert.equal(dinnerOpen.activeDay.id, lunchOpen.activeDay.id);
+  assert.equal(dinnerOpen.activeDay.date, '2026-08-25');
+  assert.equal(dinnerOpen.services.dinner.businessDayId, lunchOpen.activeDay.id);
+  assert.equal(dinnerOpen.services.dinner.sequenceBase, 1);
+  assert.equal(nextServiceSequence(dinnerOpen.orders, dinnerOpen.services.dinner, dinnerOpen.activeDay), 2);
+});
+
+test('un’azione di riapertura obsoleta non riporta lo stato alla giornata precedente', () => {
+  const oldDay = {
+    activeDay: { id: 'day-24', date: '2026-08-24', status: 'closed' },
+    orders: [],
+    services: { lunch: null, dinner: { ...closedDinner, businessDayId: 'day-24' } },
+    shift: null
+  };
+  const selected = startServiceTransition(oldDay, 'lunch', '2026-08-25T01:00:00+02:00', 'new-day');
+  const staleAction = { ...selected, shift: null };
+
+  const result = startServiceTransition(staleAction, 'dinner', '2026-08-25T01:10:00+02:00', 'reopen');
+
+  assert.equal(result.activeDay.id, selected.activeDay.id);
+  assert.equal(result.activeDay.date, '2026-08-25');
+  assert.equal(result.services.dinner.businessDayId, selected.activeDay.id);
+  assert.equal(result.services.dinner.sessions.length, 1);
 });
 
 test('la chiusura resta bloccata e identifica gli ordini attivi del turno', () => {
