@@ -140,7 +140,7 @@ test('le tabelle storiche sono immutabili e aggiornate tramite RPC Creator', () 
   assert.match(sql, /before update or delete on public\.order_items/i);
   assert.match(sql, /before update or delete on public\.order_item_changes/i);
   assert.match(sql, /before update or delete on public\.payment_adjustments/i);
-  assert.match(sql, /function public\.append_order_revision\(/i);
+  assert.match(sql, /function public\.revise_order\(/i);
   assert.match(sql, /function public\.record_payment_adjustment\(/i);
   assert.match(sql, /revoke insert, update, delete on table public\.order_items/i);
 });
@@ -151,4 +151,29 @@ test('snapshotta allergeni e vincola ordine e servizio alla stessa giornata', ()
   assert.match(sql, /allergens_snapshot jsonb not null/i);
   assert.match(sql, /jsonb_build_object\('id', allergen\.id, 'label_it', allergen\.label_it, 'label_en', allergen\.label_en\)/i);
   assert.match(sql, /foreign key \(service_id, business_day_id\) references public\.services \(id, business_day_id\)/i);
+});
+
+test('le RPC Creator creano ordini ristorante e revisioni operative versionate', () => {
+  const sql = migrationSql();
+
+  assert.match(sql, /function public\.create_restaurant_order\(payload jsonb\)/i);
+  assert.match(sql, /function public\.revise_order\(\s*p_order_id uuid,\s*p_items jsonb,\s*p_reason text\s*\)/is);
+  assert.match(sql, /order_items[\s\S]*?revision integer not null/i);
+  assert.match(sql, /create view public\.current_order_items/i);
+  assert.match(sql, /create view public\.current_order_totals/i);
+  assert.match(sql, /revoke insert on table public\.orders from authenticated/i);
+  assert.match(sql, /grant execute on function public\.create_restaurant_order\(jsonb\) to authenticated/i);
+  assert.match(sql, /grant execute on function public\.revise_order\(uuid, jsonb, text\) to authenticated/i);
+});
+
+test('i movimenti pagamento usano versioni immutabili e una vista corrente', () => {
+  const sql = migrationSql();
+
+  assert.match(sql, /adjustment_group_id uuid not null/i);
+  assert.match(sql, /version integer not null/i);
+  assert.match(sql, /supersedes_id uuid(?: unique)? references public\.payment_adjustments/i);
+  assert.match(sql, /function public\.transition_payment_adjustment\(/i);
+  assert.match(sql, /current status must be pending/i);
+  assert.match(sql, /create view public\.current_payment_adjustments/i);
+  assert.match(sql, /grant execute on function public\.transition_payment_adjustment\(uuid, text\) to authenticated/i);
 });

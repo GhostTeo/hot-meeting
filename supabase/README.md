@@ -17,6 +17,19 @@ Clients must generate one UUID `request_token` per checkout attempt, persist it
 until a definitive response, and reuse it only for retries of the identical
 request. A token reused with different normalized input is rejected.
 
+Creator clients use the normal authenticated user session and never a
+`service_role` credential. `create_restaurant_order` validates and prices a
+restaurant order atomically; direct inserts into `orders` are revoked.
+`revise_order` appends a complete new item/totals revision. Historical rows are
+not replaced: kitchen consumers read `current_order_items` and
+`current_order_item_changes`, while reports read `current_order_totals`.
+
+Payment differences begin through `record_payment_adjustment` in `pending`
+state. `transition_payment_adjustment` appends the only permitted lifecycle
+transition, from `pending` to either `recorded` or `cancelled`; terminal states
+cannot move again. Reports must read `current_payment_adjustments` and include
+only the statuses relevant to the report (normally `recorded`).
+
 ## Behavioral verification
 
 The regular test suite includes structural checks and explicitly skips the
@@ -30,4 +43,5 @@ npm run test:db
 The harness creates and removes an isolated PostgreSQL container, installs the
 Supabase role/JWT shim, applies the migration and seed, and exercises RLS,
 validation, idempotency, sequencing, immutable history, snapshots, foreign keys,
-and close/order serialization.
+restaurant creation, current revision views, payment transitions, RLS, and
+close/order serialization.

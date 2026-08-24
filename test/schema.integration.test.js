@@ -49,6 +49,18 @@ function basePayload(token, overrides = {}) {
   };
 }
 
+function restaurantPayload(overrides = {}) {
+  return {
+    service_id: IDS.service,
+    customer: { name: 'Cliente Sala', phone: '+39 333 765 4321' },
+    payment_method: 'cash',
+    items: [{ product_id: IDS.margherita, quantity: 1, changes: [{
+      type: 'addition', ingredient_id: IDS.bufalaAddition, quantity: 1
+    }] }],
+    ...overrides
+  };
+}
+
 test('schema Supabase: comportamenti PostgreSQL e policy', {
   skip: RUN_DB_INTEGRATION
     ? false
@@ -244,10 +256,11 @@ test('schema Supabase: comportamenti PostgreSQL e policy', {
         }] }]
       })));
 
-      const revisionId = creatorSql(`select public.append_order_revision(
-        '${created.order_id}', '{"items":[],"total_cents":900}'::jsonb, 'Correzione Creator'
-      );`).stdout.trim().split('\n').at(-1);
-      assert.match(revisionId, /^[0-9a-f-]{36}$/i);
+      const revision = receipt(creatorSql(`select public.revise_order(
+        '${created.order_id}', '[{"product_id":"${IDS.margherita}","quantity":2,"changes":[]}]'::jsonb,
+        'Correzione Creator'
+      );`));
+      assert.equal(revision.revision, 2);
 
       const adjustmentId = creatorSql(`select public.record_payment_adjustment(
         '${created.order_id}', 'supplement', 100, 'pending', 'cash', 'Differenza demo'
@@ -272,6 +285,182 @@ test('schema Supabase: comportamenti PostgreSQL e policy', {
       }
       assert.equal(psql('select count(*) from public.order_revisions;').stdout.trim(), '2');
       assert.equal(psql('select count(*) from public.payment_adjustments;').stdout.trim(), '1');
+    });
+
+    await t.test('Creator crea un ordine ristorante con prezzi server-side', () => {
+      resetOperationalData();
+      openService();
+
+      const nonCreator = psql(`
+        set role authenticated;
+        select public.create_restaurant_order(${quoteJson(restaurantPayload())});
+      `, { allowFailure: true });
+      assert.notEqual(nonCreator.status, 0);
+      assert.match(nonCreator.stderr, /creator role required/i);
+
+      const created = receipt(creatorSql(`
+        select public.create_restaurant_order(${quoteJson(restaurantPayload())});
+      `));
+      assert.equal(created.sequence, 1);
+      assert.equal(created.gross_cents, 1000);
+      assert.equal(psql(`select source from public.orders where id = '${created.order_id}';`).stdout.trim(), 'restaurant');
+      assert.equal(psql(`select unit_price_cents from public.current_order_items where order_id = '${created.order_id}';`).stdout.trim(), '1000');
+      assert.equal(psql(`select count(*) from public.order_revisions where order_id = '${created.order_id}';`).stdout.trim(), '1');
+      assert.equal(psql(`select count(*) from public.events where entity_id = '${created.order_id}'
+        and action = 'order.created' and metadata ->> 'source' = 'restaurant';`).stdout.trim(), '1');
+
+      const clientPrice = creatorSql(`select public.create_restaurant_order(${quoteJson(restaurantPayload({
+        items: [{ product_id: IDS.margherita, quantity: 1, price_cents: 1 }]
+      }))});`, true);
+      assert.notEqual(clientPrice.status, 0);
+      assert.match(clientPrice.stderr, /prices must not be supplied by the client/i);
+      assert.equal(psql('select count(*) from public.orders;').stdout.trim(), '1');
+      assert.equal(psql(`select next_sequence from public.business_days where id = '${IDS.day}';`).stdout.trim(), '1');
+
+      const direct = creatorSql(`
+        insert into public.orders (
+          business_day_id, service_id, sequence, source, status, customer_name,
+          customer_phone, payment_method, gross_cents, fee_cents, total_cents
+        ) values (
+          '${IDS.day}', '${IDS.service}', 99, 'restaurant', 'preparing', 'Bypass',
+          '+393331234567', 'cash', 1, 0, 1
+        );
+      `, true);
+      assert.notEqual(direct.status, 0);
+      assert.match(direct.stderr, /permission denied/i);
+    });
+
+    await t.test('revisione ricostruisce vista cucina e totali senza cancellare lo storico', () => {
+      resetOperationalData();
+      openService();
+      const created = receipt(creatorSql(`
+        select public.create_restaurant_order(${quoteJson(restaurantPayload())});
+      `));
+      const originalSnapshot = psql(`
+        select snapshot::text from public.order_revisions
+        where order_id = '${created.order_id}' and revision = 1;
+      `).stdout.trim();
+
+      const nonCreator = psql(`
+        set role authenticated;
+        select public.revise_order(
+          '${created.order_id}', '[{"product_id":"${IDS.margherita}","quantity":2,"changes":[]}]'::jsonb,
+          'Bypass ruolo'
+        );
+      `, { allowFailure: true });
+      assert.notEqual(nonCreator.status, 0);
+      assert.match(nonCreator.stderr, /creator role required/i);
+
+      const revised = receipt(creatorSql(`select public.revise_order(
+        '${created.order_id}', '[{"product_id":"${IDS.margherita}","quantity":2,"changes":[]}]'::jsonb,
+        'Due margherite senza aggiunte'
+      );`));
+      assert.equal(revised.revision, 2);
+      assert.equal(revised.gross_cents, 1600);
+      assert.equal(psql(`
+        select revision || ':' || quantity || ':' || total_price_cents
+        from public.current_order_items where order_id = '${created.order_id}';
+      `).stdout.trim(), '2:2:1600');
+      assert.equal(psql(`
+        select revision || ':' || gross_cents
+        from public.current_order_totals where order_id = '${created.order_id}';
+      `).stdout.trim(), '2:1600');
+      assert.equal(psql(`select gross_cents from public.orders where id = '${created.order_id}';`).stdout.trim(), '1000');
+      assert.equal(psql(`select count(*) from public.order_items where order_id = '${created.order_id}';`).stdout.trim(), '2');
+      assert.equal(psql(`select count(*) from public.order_item_changes where order_item_id in (
+        select id from public.order_items where order_id = '${created.order_id}'
+      );`).stdout.trim(), '1');
+      assert.equal(psql(`select count(*) from public.current_order_item_changes;`).stdout.trim(), '0');
+      assert.equal(psql(`select count(*) from public.order_revisions where order_id = '${created.order_id}';`).stdout.trim(), '2');
+      assert.equal(psql(`
+        select snapshot::text from public.order_revisions
+        where order_id = '${created.order_id}' and revision = 1;
+      `).stdout.trim(), originalSnapshot);
+      assert.equal(psql(`
+        select count(*) from public.events
+        where entity_id = '${created.order_id}' and action = 'order.revised';
+      `).stdout.trim(), '1');
+
+      const pricedByClient = creatorSql(`select public.revise_order(
+        '${created.order_id}', '[{"product_id":"${IDS.margherita}","quantity":1,"price_cents":1}]'::jsonb,
+        'Tentativo prezzo client'
+      );`, true);
+      assert.notEqual(pricedByClient.status, 0);
+      assert.match(pricedByClient.stderr, /prices must not be supplied by the client/i);
+      assert.equal(psql(`select count(*) from public.order_revisions where order_id = '${created.order_id}';`).stdout.trim(), '2');
+    });
+
+    await t.test('stato movimento pagamento è versionato, terminale e leggibile nei report', () => {
+      resetOperationalData();
+      openService();
+      const created = receipt(callPublicOrder(basePayload('70000000-0000-4000-8000-000000000071')));
+      const invalidInitial = creatorSql(`select public.record_payment_adjustment(
+        '${created.order_id}', 'supplement', 100, 'recorded', 'cash', 'Bypass stato'
+      );`, true);
+      assert.notEqual(invalidInitial.status, 0);
+      assert.match(invalidInitial.stderr, /new adjustment status must be pending/i);
+      const adjustmentGroup = creatorSql(`select public.record_payment_adjustment(
+        '${created.order_id}', 'supplement', 100, 'pending', 'cash', 'Differenza demo'
+      );`).stdout.trim().split('\n').at(-1);
+      assert.match(adjustmentGroup, /^[0-9a-f-]{36}$/i);
+
+      const anonTransition = psql(`
+        set role anon;
+        select public.transition_payment_adjustment('${adjustmentGroup}', 'recorded');
+      `, { allowFailure: true });
+      assert.notEqual(anonTransition.status, 0);
+      assert.match(anonTransition.stderr, /permission denied/i);
+
+      const nonCreator = psql(`
+        set role authenticated;
+        select public.transition_payment_adjustment('${adjustmentGroup}', 'recorded');
+      `, { allowFailure: true });
+      assert.notEqual(nonCreator.status, 0);
+      assert.match(nonCreator.stderr, /creator role required/i);
+
+      const versionId = creatorSql(`
+        select public.transition_payment_adjustment('${adjustmentGroup}', 'recorded');
+      `).stdout.trim().split('\n').at(-1);
+      assert.match(versionId, /^[0-9a-f-]{36}$/i);
+      assert.equal(psql(`
+        select version || ':' || status || ':' || amount_cents
+        from public.current_payment_adjustments
+        where adjustment_group_id = '${adjustmentGroup}';
+      `).stdout.trim(), '2:recorded:100');
+      assert.equal(psql(`
+        select count(*) from public.payment_adjustments
+        where adjustment_group_id = '${adjustmentGroup}';
+      `).stdout.trim(), '2');
+      assert.equal(psql(`
+        select coalesce(sum(case when adjustment_type = 'supplement' then amount_cents else -amount_cents end), 0)
+        from public.current_payment_adjustments where status = 'recorded';
+      `).stdout.trim(), '100');
+
+      const terminal = creatorSql(`
+        select public.transition_payment_adjustment('${adjustmentGroup}', 'cancelled');
+      `, true);
+      assert.notEqual(terminal.status, 0);
+      assert.match(terminal.stderr, /current status must be pending/i);
+      const backwards = creatorSql(`
+        select public.transition_payment_adjustment('${adjustmentGroup}', 'pending');
+      `, true);
+      assert.notEqual(backwards.status, 0);
+      assert.match(backwards.stderr, /target status must be recorded or cancelled/i);
+      assert.equal(psql(`select count(*) from public.payment_adjustments where adjustment_group_id = '${adjustmentGroup}';`).stdout.trim(), '2');
+
+      const cancelledGroup = creatorSql(`select public.record_payment_adjustment(
+        '${created.order_id}', 'refund', 50, 'pending', 'cash', 'Rimborso annullato'
+      );`).stdout.trim().split('\n').at(-1);
+      creatorSql(`select public.transition_payment_adjustment('${cancelledGroup}', 'cancelled');`);
+      assert.equal(psql(`select status from public.current_payment_adjustments
+        where adjustment_group_id = '${cancelledGroup}';`).stdout.trim(), 'cancelled');
+      assert.equal(psql(`select count(*) from public.events where entity_id = '${created.order_id}'
+        and action = 'payment.adjustment-transitioned';`).stdout.trim(), '2');
+
+      const anonView = psql('set role anon; select count(*) from public.current_payment_adjustments;', { allowFailure: true });
+      assert.notEqual(anonView.status, 0);
+      assert.equal(psql('set role authenticated; select count(*) from public.current_payment_adjustments;').stdout.trim(), '0');
+      assert.equal(creatorSql('select count(*) from public.current_payment_adjustments;').stdout.trim().split('\n').at(-1), '2');
     });
 
     await t.test('snapshot allergeni resta invariato dopo modifiche catalogo', () => {
