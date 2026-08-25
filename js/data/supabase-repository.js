@@ -85,7 +85,7 @@ function mapServiceReceipt(row) {
   });
 }
 
-function composeOrders(rows, itemRows, changeRows, totalRows, services) {
+function composeOrders(rows, itemRows, changeRows, totalRows, serviceById) {
   const changesByItem = new Map();
   for (const change of changeRows) {
     const list = changesByItem.get(change.order_item_id) ?? [];
@@ -114,7 +114,6 @@ function composeOrders(rows, itemRows, changeRows, totalRows, services) {
     itemsByOrder.set(item.order_id, list);
   }
   const totals = new Map(totalRows.map(total => [total.order_id, total]));
-  const serviceById = new Map(Object.values(services).filter(Boolean).map(service => [service.id, service]));
   return rows.map(row => {
     const total = totals.get(row.id);
     return {
@@ -176,7 +175,27 @@ function orderPayload(order, includeRequestToken) {
   return payload;
 }
 
-export function createSupabaseRepository({ client, cache } = {}) {
+function compareDescending(left, right, key) {
+  return String(right[key] ?? '').localeCompare(String(left[key] ?? ''));
+}
+
+function selectOperationalDay(rows) {
+  const sorted = [...rows].sort((left, right) => compareDescending(left, right, 'business_date'));
+  return sorted.find(day => day.status === 'open')
+    ?? sorted.find(day => day.status === 'closed')
+    ?? null;
+}
+
+function accessModeValue(accessMode) {
+  const value = typeof accessMode === 'function' ? accessMode() : accessMode;
+  return value === 'anon' ? 'anon' : 'creator';
+}
+
+function orderedQuery(client, table, columns, orderBy, ascending = true) {
+  return client.from(table).select(columns).order(orderBy, { ascending });
+}
+
+export function createSupabaseRepository({ client, cache, accessMode = 'creator' } = {}) {
   if (!client) throw new TypeError('Un client Supabase pubblico è obbligatorio');
 
   return {
@@ -192,44 +211,65 @@ export function createSupabaseRepository({ client, cache } = {}) {
     },
 
     async getState() {
-      const tables = [
-        ['products', MENU_SELECT],
-        ['public_opening_status', '*'],
-        ['business_days', '*'],
-        ['services', '*'],
-        ['orders', '*'],
-        ['current_order_items', '*'],
-        ['current_order_item_changes', '*'],
-        ['current_order_totals', '*']
-      ];
-      const results = await Promise.all(tables.map(([table, columns]) => client.from(table).select(columns)));
-      const failed = results.slice(0, 2).find(result => result.error);
-      if (failed) {
-        if (cache) return cache.getState();
-        throw failed.error;
+      const publicResults = await Promise.all([
+        orderedQuery(client, 'products', MENU_SELECT, 'sort_order'),
+        orderedQuery(client, 'public_opening_status', '*', 'business_date', false)
+      ]);
+      const publicFailure = publicResults.find(result => result.error);
+      if (publicFailure) throw publicFailure.error;
+      const [productRows, publicServices] = publicResults.map(result => result.data);
+
+      let dayRows = [];
+      let creatorServices = [];
+      let orderRows = [];
+      let itemRows = [];
+      let changeRows = [];
+      let totalRows = [];
+      if (accessModeValue(accessMode) === 'creator') {
+        const operationalResults = await Promise.all([
+          orderedQuery(client, 'business_days', '*', 'business_date', false),
+          orderedQuery(client, 'services', '*', 'opened_at', false),
+          orderedQuery(client, 'orders', '*', 'created_at', false),
+          orderedQuery(client, 'current_order_items', '*', 'sort_order'),
+          orderedQuery(client, 'current_order_item_changes', '*', 'created_at'),
+          orderedQuery(client, 'current_order_totals', '*', 'created_at')
+        ]);
+        const operationalFailure = operationalResults.find(result => result.error);
+        if (operationalFailure) throw operationalFailure.error;
+        [dayRows, creatorServices, orderRows, itemRows, changeRows, totalRows] = operationalResults.map(result => result.data);
       }
-      const [productRows, publicServices, dayRows, creatorServices, orderRows, itemRows, changeRows, totalRows] = results.map(result => result.error ? [] : result.data);
+
       const menu = productRows.map(mapProduct);
       const selectedServices = creatorServices.length ? creatorServices : publicServices;
-      const mappedServices = selectedServices.map(mapService);
-      const services = Object.fromEntries(mappedServices.map(service => [service.shift, service]));
-      const activeService = mappedServices.find(service => service.status === 'open') ?? null;
-      const day = dayRows.find(candidate => candidate.status === 'open') ?? dayRows[0] ?? null;
-      const publicDate = publicServices[0]?.business_date;
+      const mappedServices = selectedServices
+        .map(mapService)
+        .sort((left, right) => (right.openedAt ?? 0) - (left.openedAt ?? 0));
+      const serviceById = new Map(mappedServices.map(service => [service.id, service]));
+      const day = selectOperationalDay(dayRows);
+      const publicDate = [...publicServices]
+        .sort((left, right) => compareDescending(left, right, 'business_date'))[0]?.business_date;
       const activeDay = day
         ? { id: day.id, date: day.business_date, status: day.status }
         : publicDate ? { id: null, date: publicDate, status: 'open' } : null;
+      const activeDayServices = mappedServices.filter(service => activeDay && (
+        activeDay.id ? service.businessDayId === activeDay.id : service.businessDate === activeDay.date
+      ));
+      const services = {};
+      for (const service of activeDayServices) {
+        if (!services[service.shift]) services[service.shift] = service;
+      }
       for (const service of Object.values(services)) {
         if (!service.businessDate) service.businessDate = activeDay?.date;
         if (!service.businessDayId) service.businessDayId = activeDay?.id;
       }
+      const activeService = activeDayServices.find(service => service.status === 'open') ?? null;
       const snapshot = {
         menu,
         services,
         activeDay,
         shift: activeService?.shift ?? null,
         online: activeService?.online ?? false,
-        orders: composeOrders(orderRows, itemRows, changeRows, totalRows, services)
+        orders: composeOrders(orderRows, itemRows, changeRows, totalRows, serviceById)
       };
       await cache?.replaceState(snapshot);
       return snapshot;

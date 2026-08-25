@@ -4,7 +4,7 @@ import test from 'node:test';
 import { createLocalRepository } from '../js/data/local-repository.js';
 import { createSupabaseRepository } from '../js/data/supabase-repository.js';
 
-function constrainedClient(tables = {}, rpcData = {}) {
+function constrainedClient(tables = {}, rpcData = {}, tableErrors = {}) {
   const calls = [];
   const handlers = new Map();
   const channel = {
@@ -18,10 +18,25 @@ function constrainedClient(tables = {}, rpcData = {}) {
     calls,
     handlers,
     from(table) {
-      return {
-        async select(columns) {
+      const query = {
+        select(columns) {
           calls.push({ type: 'select', table, columns });
-          return { data: structuredClone(tables[table] ?? []), error: null };
+          return query;
+        },
+        order(column, options) {
+          calls.push({ type: 'order', table, column, options });
+          return query;
+        },
+        eq(column, value) {
+          calls.push({ type: 'eq', table, column, value });
+          return query;
+        },
+        then(resolve, reject) {
+          const result = {
+            data: structuredClone(tables[table] ?? []),
+            error: tableErrors[table] ?? null
+          };
+          return Promise.resolve(result).then(resolve, reject);
         },
         update() {
           throw new Error(`direct write forbidden: ${table}`);
@@ -30,6 +45,7 @@ function constrainedClient(tables = {}, rpcData = {}) {
           throw new Error(`direct write forbidden: ${table}`);
         }
       };
+      return query;
     },
     async rpc(name, args) {
       calls.push({ type: 'rpc', name, args });
@@ -82,7 +98,7 @@ test('hydration remota compone menu, giornata, servizi e viste correnti ordini',
       gross_cents: 900, fee_cents: 0, total_cents: 900
     }]
   });
-  const repo = createSupabaseRepository({ client });
+  const repo = createSupabaseRepository({ client, accessMode: 'creator' });
 
   const state = await repo.getState();
 
@@ -176,4 +192,95 @@ test('menu remoto vuoto resta autorevole nello snapshot', async () => {
 
   assert.deepEqual(state.menu, []);
   assert.deepEqual(await cache.getMenu(), []);
+});
+
+test('snapshot Creator è atomico e conserva la cache se una query operativa fallisce', async () => {
+  const previous = { menu: [{ id: 'cached', price: 8 }], orders: [{ id: 'old' }] };
+  const cache = createLocalRepository({ initialState: previous });
+  const previousSnapshot = await cache.getState();
+  const client = constrainedClient({
+    products: [], public_opening_status: [], business_days: [], services: [], orders: [],
+    current_order_items: [], current_order_item_changes: [], current_order_totals: []
+  }, {}, { current_order_totals: new Error('totali non disponibili') });
+  const repo = createSupabaseRepository({ client, cache, accessMode: 'creator' });
+
+  await assert.rejects(repo.getState(), /totali non disponibili/);
+  assert.deepEqual(await cache.getState(), previousSnapshot);
+});
+
+test('snapshot anonimo legge solo le viste pubbliche e non maschera i loro errori', async () => {
+  const publicTables = {
+    products: [],
+    public_opening_status: [{
+      service_id: 'service-public', business_date: '2026-08-24', shift: 'lunch',
+      status: 'open', online_orders_enabled: true, opened_at: '2026-08-24T10:00:00Z'
+    }]
+  };
+  const client = constrainedClient(publicTables, {}, {
+    business_days: new Error('permission denied'), services: new Error('permission denied')
+  });
+  const repo = createSupabaseRepository({ client, accessMode: 'anon' });
+
+  const state = await repo.getState();
+
+  assert.equal(state.services.lunch.id, 'service-public');
+  assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
+    'products', 'public_opening_status'
+  ]);
+
+  const cache = createLocalRepository({ initialState: { menu: [{ id: 'last-good' }] } });
+  const failing = createSupabaseRepository({
+    client: constrainedClient(publicTables, {}, { public_opening_status: new Error('rete assente') }),
+    cache,
+    accessMode: 'anon'
+  });
+  await assert.rejects(failing.getState(), /rete assente/);
+  assert.deepEqual((await cache.getState()).menu, [{ id: 'last-good' }]);
+});
+
+test('giornata e servizi sono deterministici con fixture ripetute su più date', async () => {
+  const client = constrainedClient({
+    products: [], public_opening_status: [],
+    business_days: [
+      { id: 'closed-newer', business_date: '2026-08-25', status: 'closed' },
+      { id: 'open-day', business_date: '2026-08-24', status: 'open' },
+      { id: 'closed-old', business_date: '2026-08-23', status: 'closed' }
+    ],
+    services: [
+      { id: 'old-lunch', business_day_id: 'closed-old', shift: 'lunch', status: 'closed', opened_at: '2026-08-23T10:00:00Z' },
+      { id: 'active-dinner', business_day_id: 'open-day', shift: 'dinner', status: 'open', online_orders_enabled: true, opened_at: '2026-08-24T17:00:00Z' },
+      { id: 'future-lunch', business_day_id: 'closed-newer', shift: 'lunch', status: 'closed', opened_at: '2026-08-25T10:00:00Z' },
+      { id: 'active-lunch', business_day_id: 'open-day', shift: 'lunch', status: 'closed', opened_at: '2026-08-24T10:00:00Z' }
+    ],
+    orders: [{
+      id: 'historical-order', business_day_id: 'closed-old', service_id: 'old-lunch', sequence: 1,
+      source: 'pos', status: 'completed', customer_name: 'Ada', customer_phone: '', payment_method: 'cash',
+      gross_cents: 1000, fee_cents: 0, total_cents: 1000, created_at: '2026-08-23T10:05:00Z'
+    }],
+    current_order_items: [], current_order_item_changes: [], current_order_totals: []
+  });
+  const repo = createSupabaseRepository({ client, accessMode: 'creator' });
+
+  const state = await repo.getState();
+
+  assert.equal(state.activeDay.id, 'open-day');
+  assert.deepEqual(Object.keys(state.services).sort(), ['dinner', 'lunch']);
+  assert.equal(state.services.lunch.id, 'active-lunch');
+  assert.equal(state.orders[0].shift, 'lunch');
+  assert.ok(client.calls.some(call => call.type === 'order' && call.table === 'business_days' && call.column === 'business_date'));
+  assert.ok(client.calls.some(call => call.type === 'order' && call.table === 'services' && call.column === 'opened_at'));
+});
+
+test('senza giornata aperta sceglie l’ultima giornata chiusa per data', async () => {
+  const client = constrainedClient({
+    products: [], public_opening_status: [],
+    business_days: [
+      { id: 'older', business_date: '2026-08-22', status: 'closed' },
+      { id: 'latest', business_date: '2026-08-24', status: 'closed' }
+    ],
+    services: [], orders: [], current_order_items: [], current_order_item_changes: [], current_order_totals: []
+  });
+  const state = await createSupabaseRepository({ client, accessMode: 'creator' }).getState();
+
+  assert.equal(state.activeDay.id, 'latest');
 });

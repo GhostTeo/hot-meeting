@@ -50,6 +50,72 @@ test('bootstrap rifiuta modalità implicita e credenziali service-role', async (
   }), /pubblica anon/i);
 });
 
+test('bootstrap decodifica JWT base64url e accetta soltanto role anon', async () => {
+  const jwt = role => {
+    const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+    return `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ role, iss: 'supabase' })}.signature`;
+  };
+  const supabase = {
+    createClient() {
+      return {
+        auth: {
+          async getSession() { return { data: { session: null }, error: null }; },
+          onAuthStateChange() { return { data: { subscription: { unsubscribe() {} } } }; }
+        }
+      };
+    }
+  };
+
+  await assert.rejects(bootstrapDataLayer({
+    config: { mode: 'supabase', supabaseUrl: 'https://project.supabase.co', supabaseAnonKey: jwt('service_role') },
+    supabase
+  }), /pubblica anon/i);
+  await assert.rejects(bootstrapDataLayer({
+    config: { mode: 'supabase', supabaseUrl: 'https://project.supabase.co', supabaseAnonKey: jwt('supabase_admin') },
+    supabase
+  }), /pubblica anon/i);
+  const runtime = await bootstrapDataLayer({
+    config: { mode: 'supabase', supabaseUrl: 'https://project.supabase.co', supabaseAnonKey: jwt('anon') },
+    supabase
+  });
+  assert.equal(runtime.mode, 'supabase');
+});
+
+test('repository remoto cambia accesso quando cambia la sessione autenticata', async () => {
+  let authListener;
+  const selected = [];
+  const client = {
+    auth: {
+      async getSession() { return { data: { session: null }, error: null }; },
+      onAuthStateChange(listener) {
+        authListener = listener;
+        return { data: { subscription: { unsubscribe() {} } } };
+      }
+    },
+    from(table) {
+      const query = {
+        select() { selected.push(table); return query; },
+        order() { return query; },
+        then(resolve, reject) { return Promise.resolve({ data: [], error: null }).then(resolve, reject); }
+      };
+      return query;
+    }
+  };
+  const runtime = await bootstrapDataLayer({
+    config: { mode: 'supabase', supabaseUrl: 'https://project.supabase.co', supabaseAnonKey: 'sb_publishable_demo' },
+    supabase: { createClient: () => client }
+  });
+  const unsubscribe = runtime.auth.onChange(() => {});
+
+  await runtime.repository.getState();
+  assert.deepEqual(selected, ['products', 'public_opening_status']);
+  selected.length = 0;
+  authListener('SIGNED_IN', { user: { app_metadata: { role: 'creator' } } });
+  await runtime.repository.getState();
+  assert.ok(selected.includes('orders'));
+  unsubscribe();
+});
+
 test('login demo esiste soltanto quando la modalità locale è esplicita', async () => {
   const runtime = await bootstrapDataLayer({ config: { mode: 'local' }, initialState: { menu: [] } });
 

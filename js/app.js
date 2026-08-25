@@ -6,18 +6,19 @@ import { buildCloseDialog, closeService, nextServiceSequence, servicePanel, shif
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
 import { appConfig } from './config.js';
 import { bootstrapDataLayer, isCreatorSession } from './bootstrap.js';
-import { hydrateApplicationState } from './app-state.js';
+import { applyRepositorySnapshot, createRepositoryRefreshCoordinator } from './app-state.js';
 
 const defaults={view:'customer',creator:false,shift:null,capacity:90,online:true,cart:[],calendar:{closedWeekdays:[2],exceptions:[]},services:{lunch:null,dinner:null},activeDay:null,menu:[
  {id:'margherita',type:'pizza',name:'Margherita',price:8,emoji:'🍕',ingredients:['Pomodoro','Mozzarella','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Mozzarella di bufala',price:2},{name:'Prosciutto cotto',price:2},{name:'Olive',price:1}],available:true},
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
  {id:'cola',type:'drink',name:'Cola',price:3,emoji:'🥤',ingredients:[],available:true}],orders:[]};
-let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null;
+let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false;
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
-async function refreshRepositoryState(){try{state=await hydrateApplicationState(state,repository);save();render()}catch{reportRepositoryError()}}
+const stateRefresh=createRepositoryRefreshCoordinator({repository,apply(snapshot){state=applyRepositorySnapshot(state,snapshot);save();if(hasRendered)render()},onError:reportRepositoryError});
+async function refreshRepositoryState(){try{await stateRefresh.refresh()}catch{}}
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(v)}
 function toast(text){const el=document.querySelector('#toast');el.textContent=text;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
 function pizzasAhead(){return state.orders.filter(o=>o.status==='preparing').reduce((n,o)=>n+o.items.reduce((s,i)=>s+i.quantity,0),0)}
@@ -122,7 +123,7 @@ function bind(){
   const dialog=document.querySelector('.dialog-card');
   if(dialog)releaseDialogTrap=trapDialogFocus(dialog,finishDialog);
 }
-try{state=await hydrateApplicationState(state,repository);save()}catch{reportRepositoryError()}
-render();setInterval(()=>{if(state.view==='kitchen')render()},1000);
-repository.subscribe(()=>{void refreshRepositoryState()});
-runtime.auth.onChange(session=>{state.creator=isCreatorSession(session);void refreshRepositoryState()});
+try{await stateRefresh.refresh()}catch{}
+render();hasRendered=true;setInterval(()=>{if(state.view==='kitchen')render()},1000);
+repository.subscribe(()=>{void stateRefresh.schedule()});
+runtime.auth.onChange(session=>{state.creator=isCreatorSession(session);void stateRefresh.schedule()});

@@ -14,7 +14,7 @@ export const REPOSITORY_METHODS = Object.freeze([
   'subscribe'
 ]);
 
-export function createRepository({ client, storage, storageKey, initialState } = {}) {
+export function createRepository({ client, storage, storageKey, initialState, accessMode } = {}) {
   const cache = createLocalRepository({ storage, storageKey, initialState });
-  return client ? createSupabaseRepository({ client, cache }) : cache;
+  return client ? createSupabaseRepository({ client, cache, accessMode }) : cache;
 }
