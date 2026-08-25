@@ -10,6 +10,19 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-24-hot-meeting-design.md`
 
+## Stato di avanzamento
+
+Aggiornato il 2026-08-25, branch `feature/operational-platform`.
+
+- Task 1-5: completati. Giornata operativa, report periodici, calendario e
+  turni, schema Supabase con RLS e repository persistente con Realtime sono
+  implementati e coperti da test.
+- Task 6-8: da fare. Storico e revisioni ordine, recap cliente bilingue,
+  verifica integrata e pubblicazione.
+
+Il branch non e' ancora unito in `main`, che contiene soltanto il prototipo
+iniziale.
+
 ## Global Constraints
 
 - Fuso orario operativo: `Europe/Rome`.
@@ -31,7 +44,7 @@
 **Interfaces:**
 - Produces: `resolveBusinessDate(now, activeDay)`, `nextDailySequence(orders, businessDate)`, `canCloseService(orders, serviceId)`, `resolveClosure(date, schedule, exceptions)`.
 
-- [ ] **Step 1: Scrivere test fallenti**
+- [x] **Step 1: Scrivere test fallenti**
 
 ```js
 test('mantiene il 23 agosto dopo mezzanotte finché la giornata è aperta', () => {
@@ -45,21 +58,21 @@ test('blocca la chiusura con un ordine in preparazione', () => {
 });
 ```
 
-- [ ] **Step 2: Eseguire il test e verificare il fallimento**
+- [x] **Step 2: Eseguire il test e verificare il fallimento**
 
 Run: `node --test test/operations.test.js`
 Expected: FAIL per export mancanti.
 
-- [ ] **Step 3: Implementare le funzioni pure minime**
+- [x] **Step 3: Implementare le funzioni pure minime**
 
 La chiusura ricorrente usa numeri ISO `1–7`; le eccezioni per data prevalgono sulla regola settimanale.
 
-- [ ] **Step 4: Eseguire tutti i test**
+- [x] **Step 4: Eseguire tutti i test**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add js/operations.js test/operations.test.js
@@ -76,7 +89,7 @@ git commit -m "feat: add operational day rules"
 - Consumes: ordini completati con `businessDate`, `shift`, `gross`, `fees`, `adjustments`.
 - Produces: `dailyReport`, `monthlyReport`, `semesterReport`, `annualReport`.
 
-- [ ] **Step 1: Scrivere test fallenti per periodi e totali**
+- [x] **Step 1: Scrivere test fallenti per periodi e totali**
 
 ```js
 test('calcola il primo semestre fisso', () => {
@@ -86,21 +99,21 @@ test('calcola il primo semestre fisso', () => {
 });
 ```
 
-- [ ] **Step 2: Verificare RED**
+- [x] **Step 2: Verificare RED**
 
 Run: `node --test test/reports.test.js`
 Expected: FAIL per `semesterReport` mancante.
 
-- [ ] **Step 3: Implementare aggregazione unica e filtri periodo**
+- [x] **Step 3: Implementare aggregazione unica e filtri periodo**
 
 Tutti i report restituiscono `{ orders, pizzas, gross, fees, supplements, refunds, net }`.
 
-- [ ] **Step 4: Verificare GREEN**
+- [x] **Step 4: Verificare GREEN**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add js/reports.js test/reports.test.js
@@ -121,7 +134,7 @@ git commit -m "feat: add periodic reporting engine"
 - Consumes: funzioni di `js/operations.js`.
 - Produces: impostazioni chiusura, ferie, aperture straordinarie, conferma chiusura e riapertura turno.
 
-- [ ] **Step 1: Testare il modello delle azioni UI**
+- [x] **Step 1: Testare il modello delle azioni UI**
 
 ```js
 test('una riapertura mantiene giornata e progressivo', () => {
@@ -131,21 +144,21 @@ test('una riapertura mantiene giornata e progressivo', () => {
 });
 ```
 
-- [ ] **Step 2: Verificare RED**
+- [x] **Step 2: Verificare RED**
 
 Run: `node --test test/service-flow.test.js`
 Expected: FAIL per `reopenService` mancante.
 
-- [ ] **Step 3: Implementare pannello calendario e dialoghi accessibili**
+- [x] **Step 3: Implementare pannello calendario e dialoghi accessibili**
 
 Il Creator può cambiare il giorno settimanale, aggiungere ferie e creare un'apertura straordinaria. La chiusura usa un dialogo con riepilogo e conferma; se la coda non è vuota mostra gli ordini bloccanti.
 
-- [ ] **Step 4: Verificare test e navigazione locale**
+- [x] **Step 4: Verificare test e navigazione locale**
 
 Run: `npm test`
 Expected: PASS; nessun `prompt()` o `confirm()` nel codice.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add js/views js/ui js/app.js styles.css test/service-flow.test.js
@@ -162,7 +175,7 @@ git commit -m "feat: add business calendar and service controls"
 **Interfaces:**
 - Produces: tabelle e policy descritte nella specifica, funzione SQL `next_order_sequence(p_business_day uuid)` e RPC controllata `create_public_order(payload jsonb)`.
 
-- [ ] **Step 1: Scrivere controlli strutturali fallenti**
+- [x] **Step 1: Scrivere controlli strutturali fallenti**
 
 ```js
 test('la migrazione abilita RLS su ordini ed eventi', () => {
@@ -171,21 +184,21 @@ test('la migrazione abilita RLS su ordini ed eventi', () => {
 });
 ```
 
-- [ ] **Step 2: Verificare RED**
+- [x] **Step 2: Verificare RED**
 
 Run: `node --test test/schema.test.js`
 Expected: FAIL perché la migrazione non esiste.
 
-- [ ] **Step 3: Creare schema, indici, vincoli e policy**
+- [x] **Step 3: Creare schema, indici, vincoli e policy**
 
 Lettura pubblica soltanto per menu disponibile e stato apertura; ordini, telefono, email, report ed eventi richiedono ruolo Creator. La RPC pubblica valida prodotti, prezzi server-side e servizio aperto.
 
-- [ ] **Step 4: Verificare migrazione in un progetto locale o remoto di sviluppo**
+- [x] **Step 4: Verificare migrazione in un progetto locale o remoto di sviluppo**
 
 Run: `npm test`
 Expected: PASS; applicazione SQL senza errori.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase test/schema.test.js
@@ -205,7 +218,7 @@ git commit -m "feat: add secure Supabase schema"
 **Interfaces:**
 - Produces: `getMenu`, `saveProduct`, `openService`, `closeService`, `createOrder`, `reviseOrder`, `subscribe`.
 
-- [ ] **Step 1: Scrivere contract test condivisi**
+- [x] **Step 1: Scrivere contract test condivisi**
 
 ```js
 export function repositoryContract(createRepository) {
@@ -217,21 +230,21 @@ export function repositoryContract(createRepository) {
 }
 ```
 
-- [ ] **Step 2: Verificare RED sul repository locale**
+- [x] **Step 2: Verificare RED sul repository locale**
 
 Run: `node --test test/repository-contract.test.js`
 Expected: FAIL per adapter mancante.
 
-- [ ] **Step 3: Implementare adapter locale e Supabase**
+- [x] **Step 3: Implementare adapter locale e Supabase**
 
 L'adapter Supabase sottoscrive menu, servizi e ordini; la cache locale è fallback di lettura e non sovrascrive dati remoti.
 
-- [ ] **Step 4: Verificare contract e test completi**
+- [x] **Step 4: Verificare contract e test completi**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add js/data js/config.example.js js/app.js test/repository-contract.test.js
