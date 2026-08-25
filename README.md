@@ -2,6 +2,13 @@
 
 Web app per ordinazioni e gestione operativa della pizzeria Hot Meeting (Milano, Piola).
 
+## Indirizzo pubblico
+
+https://ghostteo.github.io/hot-meeting/
+
+Il sito e' servito da GitHub Pages a partire dal branch `main`: ogni push su
+`main` lo ripubblica, di solito entro qualche minuto.
+
 ## Aree
 
 - Cliente: menu in italiano o inglese, personalizzazione pizza con ingredienti e aggiunte, allergeni, note, carrello, checkout e recap dell'ordine.
