@@ -11,6 +11,8 @@ import {
   startServiceTransition
 } from '../js/views/service.js';
 import {
+  holidayException,
+  openingException,
   addExceptionalOpening,
   addHoliday,
   updateWeeklyClosure
@@ -298,4 +300,13 @@ test('un servizio appena aperto accetta ordini online', () => {
 test('la riapertura conserva la sospensione degli ordini online', () => {
   assert.equal(serviceAcceptsOrders({ online: false, status: 'closed' }, 'reopen'), false);
   assert.equal(serviceAcceptsOrders({ online: true, status: 'closed' }, 'reopen'), true);
+});
+
+test('le eccezioni normalizzano il messaggio pubblico prima di raggiungere il database', () => {
+  assert.deepEqual(holidayException({ from: '2026-08-10', to: '2026-08-20', message: '  ' }), {
+    from: '2026-08-10', to: '2026-08-20', closed: true, message: 'Chiuso per ferie'
+  });
+  assert.deepEqual(openingException({ date: '2026-08-15', message: 'Ferragosto' }), {
+    date: '2026-08-15', closed: false, message: 'Ferragosto'
+  });
 });

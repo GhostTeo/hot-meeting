@@ -33,6 +33,36 @@ export function repositoryContract(label, createRepository) {
     assert.deepEqual(snapshot.orders[0].items, [{ quantity: 2 }]);
     assert.deepEqual(events.map(event => event.scope), ['services', 'orders', 'orders', 'services']);
   });
+
+  test(`${label}: il calendario vive nel repository e non solo nel browser`, async () => {
+    const repo = await createRepository();
+
+    await repo.saveWeeklyClosure(3);
+    await repo.addClosureException({ from: '2026-08-10', to: '2026-08-20', closed: true, message: 'Ferie' });
+    const state = await repo.getState();
+
+    assert.deepEqual(state.calendar.closedWeekdays, [3]);
+    assert.deepEqual(state.calendar.exceptions.map(exception => exception.message), ['Ferie']);
+  });
+
+  test(`${label}: cambiare riposo settimanale sostituisce il giorno invece di aggiungerlo`, async () => {
+    const repo = await createRepository();
+
+    await repo.saveWeeklyClosure(2);
+    await repo.saveWeeklyClosure(4);
+
+    assert.deepEqual((await repo.getState()).calendar.closedWeekdays, [4]);
+  });
+
+  test(`${label}: un eccezione del calendario si rimuove per identificativo`, async () => {
+    const repo = await createRepository();
+    await repo.addClosureException({ date: '2026-08-15', closed: false, message: 'Ferragosto aperto' });
+    const { id } = (await repo.getState()).calendar.exceptions[0];
+
+    await repo.removeClosureException(id);
+
+    assert.deepEqual((await repo.getState()).calendar.exceptions, []);
+  });
 }
 
 repositoryContract('repository locale', async () => createLocalRepository({
@@ -246,7 +276,7 @@ test('repository Supabase: sottoscrive tutte le fonti realtime e rimuove il cana
   assert.deepEqual(client.realtimeTables, [
     'products', 'product_translations', 'ingredients', 'product_ingredients', 'product_allergens',
     'business_days', 'services', 'service_sessions', 'orders', 'order_items',
-    'order_item_changes', 'order_revisions'
+    'order_item_changes', 'order_revisions', 'closures'
   ]);
   assert.equal(client.removedChannel.name, 'hot-meeting-repository');
 });

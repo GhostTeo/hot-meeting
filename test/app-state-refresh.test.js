@@ -61,3 +61,15 @@ test('una raffica Realtime viene accorpata e serializzata in un solo recupero su
   assert.equal(loads.length, 2);
   assert.deepEqual(applied, [1, 2]);
 });
+
+test('lo snapshot porta anche il calendario, non solo menu servizi e ordini', async () => {
+  const { applyRepositorySnapshot } = await import('../js/app-state.js');
+  const calendario = { closedWeekdays: [4], exceptions: [{ id: 'x', date: '2026-08-15', closed: false, message: 'Aperto' }] };
+
+  const state = applyRepositorySnapshot(
+    { calendar: { closedWeekdays: [2], exceptions: [] } },
+    { menu: [], services: {}, activeDay: null, shift: null, online: false, orders: [], calendar: calendario }
+  );
+
+  assert.deepEqual(state.calendar, calendario);
+});

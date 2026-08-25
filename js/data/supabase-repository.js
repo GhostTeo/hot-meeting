@@ -1,4 +1,5 @@
 import { paymentLabel } from '../domain.js';
+import { calendarFromClosures, closureRowFromException, weeklyClosureRow } from '../closures.js';
 const MENU_SELECT = `
   id, slug, product_type, price_cents, available, sort_order,
   product_translations(locale, name, description),
@@ -211,14 +212,32 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       return menu;
     },
 
+    async saveWeeklyClosure(weekday) {
+      const removal = await client.from('closures').delete().eq('closure_type', 'weekly');
+      if (removal?.error) throw removal.error;
+      const { error } = await client.from('closures').insert(weeklyClosureRow(weekday));
+      if (error) throw error;
+    },
+
+    async addClosureException(exception) {
+      const { error } = await client.from('closures').insert(closureRowFromException(exception));
+      if (error) throw error;
+    },
+
+    async removeClosureException(id) {
+      const { error } = await client.from('closures').delete().eq('id', id);
+      if (error) throw error;
+    },
+
     async getState() {
       const publicResults = await Promise.all([
         orderedQuery(client, 'products', MENU_SELECT, 'sort_order'),
-        orderedQuery(client, 'public_opening_status', '*', 'business_date', false)
+        orderedQuery(client, 'public_opening_status', '*', 'business_date', false),
+        orderedQuery(client, 'public_closure_calendar', '*', 'closure_type')
       ]);
       const publicFailure = publicResults.find(result => result.error);
       if (publicFailure) throw publicFailure.error;
-      const [productRows, publicServices] = publicResults.map(result => result.data);
+      const [productRows, publicServices, publicClosures] = publicResults.map(result => result.data);
 
       let dayRows = [];
       let creatorServices = [];
@@ -226,6 +245,7 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       let itemRows = [];
       let changeRows = [];
       let totalRows = [];
+      let closureRows = null;
       if (accessModeValue(accessMode) === 'creator') {
         const operationalResults = await Promise.all([
           orderedQuery(client, 'business_days', '*', 'business_date', false),
@@ -233,11 +253,12 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
           orderedQuery(client, 'orders', '*', 'created_at', false),
           orderedQuery(client, 'current_order_items', '*', 'sort_order'),
           orderedQuery(client, 'current_order_item_changes', '*', 'created_at'),
-          orderedQuery(client, 'current_order_totals', '*', 'created_at')
+          orderedQuery(client, 'current_order_totals', '*', 'created_at'),
+          orderedQuery(client, 'closures', '*', 'created_at')
         ]);
         const operationalFailure = operationalResults.find(result => result.error);
         if (operationalFailure) throw operationalFailure.error;
-        [dayRows, creatorServices, orderRows, itemRows, changeRows, totalRows] = operationalResults.map(result => result.data);
+        [dayRows, creatorServices, orderRows, itemRows, changeRows, totalRows, closureRows] = operationalResults.map(result => result.data);
       }
 
       const menu = productRows.map(mapProduct);
@@ -266,6 +287,7 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       const activeService = activeDayServices.find(service => service.status === 'open') ?? null;
       const snapshot = {
         menu,
+        calendar: calendarFromClosures(closureRows ?? publicClosures),
         services,
         activeDay,
         shift: activeService?.shift ?? null,
@@ -360,7 +382,8 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         products: 'menu', product_translations: 'menu', ingredients: 'menu',
         product_ingredients: 'menu', product_allergens: 'menu',
         business_days: 'services', services: 'services', service_sessions: 'services',
-        orders: 'orders', order_items: 'orders', order_item_changes: 'orders', order_revisions: 'orders'
+        orders: 'orders', order_items: 'orders', order_item_changes: 'orders', order_revisions: 'orders',
+        closures: 'calendar'
       };
       for (const [table, scope] of Object.entries(scopes)) {
         channel.on('postgres_changes', { event: '*', schema: 'public', table }, payload => {

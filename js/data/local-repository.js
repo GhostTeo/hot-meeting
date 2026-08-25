@@ -1,3 +1,5 @@
+import { calendarFromClosures, closureRowFromException, weeklyClosureRow } from '../closures.js';
+
 function copy(value) {
   return structuredClone(value);
 }
@@ -28,7 +30,21 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
 
   function snapshot() {
     const open = openServiceEntry();
-    return copy({ ...state, shift: open?.shift ?? null, online: open?.online ?? false });
+    // Come repository primario la verita' sono le righe closures; come cache di
+    // uno snapshot remoto il calendario e' gia' mappato e va conservato.
+    const calendar = Array.isArray(state.closures)
+      ? calendarFromClosures(state.closures)
+      : (state.calendar ?? { closedWeekdays: [], exceptions: [] });
+    return copy({ ...state, calendar, shift: open?.shift ?? null, online: open?.online ?? false });
+  }
+
+  function closureRows() {
+    if (!Array.isArray(state.closures)) state.closures = [];
+    return state.closures;
+  }
+
+  function newId() {
+    return globalThis.crypto.randomUUID();
   }
 
   function emit(scope) {
@@ -65,6 +81,28 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
 
     async getState() {
       return snapshot();
+    },
+
+    async saveWeeklyClosure(weekday) {
+      const row = { id: newId(), ...weeklyClosureRow(weekday) };
+      state.closures = [...closureRows().filter(entry => entry.closure_type !== 'weekly'), row];
+      persist();
+      emit('calendar');
+      return copy(row);
+    },
+
+    async addClosureException(exception) {
+      const row = { id: newId(), ...closureRowFromException(exception) };
+      state.closures = [...closureRows(), row];
+      persist();
+      emit('calendar');
+      return copy(row);
+    },
+
+    async removeClosureException(id) {
+      state.closures = closureRows().filter(entry => entry.id !== id);
+      persist();
+      emit('calendar');
     },
 
     async openService(service) {

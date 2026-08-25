@@ -1,12 +1,23 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const migrationUrl = new URL('../supabase/migrations/202608240001_core.sql', import.meta.url);
+const migrationsUrl = new URL('../supabase/migrations/', import.meta.url);
+const migrationUrl = new URL('202608240001_core.sql', migrationsUrl);
 
 function migrationSql() {
   assert.ok(existsSync(migrationUrl), 'la migrazione Supabase core deve esistere');
   return readFileSync(migrationUrl, 'utf8');
+}
+
+// Le verifiche di coerenza guardano lo schema completo, non solo la migrazione
+// iniziale, cosi' una migrazione successiva non puo' sfuggire ai controlli.
+function allMigrationsSql() {
+  return readdirSync(migrationsUrl)
+    .filter(name => name.endsWith('.sql'))
+    .sort()
+    .map(name => readFileSync(new URL(name, migrationsUrl), 'utf8'))
+    .join('\n');
 }
 
 test('la migrazione abilita RLS su ordini ed eventi', () => {
@@ -200,12 +211,12 @@ test('il lifecycle servizi passa da RPC Creator atomiche e non da scritture tabe
 });
 
 test('registra nel publication Realtime tutte le sorgenti riconciliate dal repository', () => {
-  const sql = migrationSql();
+  const sql = allMigrationsSql();
 
   for (const table of [
     'products', 'product_translations', 'ingredients', 'product_ingredients', 'product_allergens',
     'business_days', 'services', 'service_sessions', 'orders', 'order_items',
-    'order_item_changes', 'order_revisions'
+    'order_item_changes', 'order_revisions', 'closures'
   ]) {
     assert.match(sql, new RegExp(`'${table}'`, 'i'), `sorgente Realtime ${table} mancante`);
   }

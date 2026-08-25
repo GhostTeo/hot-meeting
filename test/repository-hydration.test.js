@@ -4,7 +4,7 @@ import test from 'node:test';
 import { createLocalRepository } from '../js/data/local-repository.js';
 import { createSupabaseRepository } from '../js/data/supabase-repository.js';
 
-function constrainedClient(tables = {}, rpcData = {}, tableErrors = {}) {
+function constrainedClient(tables = {}, rpcData = {}, tableErrors = {}, writableTables = []) {
   const calls = [];
   const handlers = new Map();
   const channel = {
@@ -43,6 +43,16 @@ function constrainedClient(tables = {}, rpcData = {}, tableErrors = {}) {
         },
         upsert() {
           throw new Error(`direct write forbidden: ${table}`);
+        },
+        insert(values) {
+          if (!writableTables.includes(table)) throw new Error(`direct write forbidden: ${table}`);
+          calls.push({ type: 'insert', table, values });
+          return Promise.resolve({ data: structuredClone(values), error: null });
+        },
+        delete() {
+          if (!writableTables.includes(table)) throw new Error(`direct write forbidden: ${table}`);
+          calls.push({ type: 'delete', table });
+          return query;
         }
       };
       return query;
@@ -112,8 +122,8 @@ test('hydration remota compone menu, giornata, servizi e viste correnti ordini',
   assert.equal(state.orders[0].items[0].name, 'Margherita');
   assert.deepEqual(state.orders[0].items[0].additions, [{ name: 'Olive', price: 1, quantity: 1 }]);
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
-    'products', 'public_opening_status', 'business_days', 'services', 'orders',
-    'current_order_items', 'current_order_item_changes', 'current_order_totals'
+    'products', 'public_opening_status', 'public_closure_calendar', 'business_days', 'services', 'orders',
+    'current_order_items', 'current_order_item_changes', 'current_order_totals', 'closures'
   ]);
 });
 
@@ -225,7 +235,7 @@ test('snapshot anonimo legge solo le viste pubbliche e non maschera i loro error
 
   assert.equal(state.services.lunch.id, 'service-public');
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
-    'products', 'public_opening_status'
+    'products', 'public_opening_status', 'public_closure_calendar'
   ]);
 
   const cache = createLocalRepository({ initialState: { menu: [{ id: 'last-good' }] } });
@@ -323,4 +333,53 @@ test('la chiusura locale libera il turno senza perdere la giornata operativa', a
   assert.equal(snapshot.shift, null);
   assert.equal(snapshot.online, false);
   assert.deepEqual(snapshot.activeDay, { id: 'day-2026-08-25-1', date: '2026-08-25', status: 'open' });
+});
+
+test('lo snapshot Creator ricostruisce il calendario dalle chiusure', async () => {
+  const client = constrainedClient({
+    closures: [
+      { id: 'w', closure_type: 'weekly', weekday: 2, public_message: '' },
+      { id: 'h', closure_type: 'holiday', starts_on: '2026-08-10', ends_on: '2026-08-20', public_message: 'Ferie' }
+    ]
+  });
+  const repo = createSupabaseRepository({ client, cache: createLocalRepository({}) });
+
+  const state = await repo.getState();
+
+  assert.deepEqual(state.calendar.closedWeekdays, [2]);
+  assert.deepEqual(state.calendar.exceptions.map(exception => exception.message), ['Ferie']);
+});
+
+test('lo snapshot anonimo legge il calendario dalla vista pubblica e non dalla tabella', async () => {
+  const client = constrainedClient({
+    public_closure_calendar: [{ closure_type: 'weekly', weekday: 4, public_message: '' }]
+  });
+  const repo = createSupabaseRepository({ client, cache: createLocalRepository({}), accessMode: 'anon' });
+
+  const state = await repo.getState();
+
+  assert.deepEqual(state.calendar.closedWeekdays, [4]);
+  assert.equal(client.calls.some(call => call.table === 'closures'), false);
+});
+
+test('cambiare riposo settimanale rimuove la riga precedente prima di inserire', async () => {
+  const client = constrainedClient({}, {}, {}, ['closures']);
+  const repo = createSupabaseRepository({ client, cache: createLocalRepository({}) });
+
+  await repo.saveWeeklyClosure(5);
+
+  const writes = client.calls.filter(call => ['insert', 'delete'].includes(call.type));
+  assert.deepEqual(writes.map(call => call.type), ['delete', 'insert']);
+  assert.equal(writes[1].values.weekday, 5);
+});
+
+test('le chiusure arrivano in Realtime come le altre sorgenti', async () => {
+  const client = constrainedClient();
+  const repo = createSupabaseRepository({ client, cache: createLocalRepository({}) });
+  const events = [];
+  repo.subscribe(event => events.push(event));
+
+  client.handlers.get('closures')({ eventType: 'INSERT', new: {}, old: {} });
+
+  assert.deepEqual(events, [{ type: 'repository.changed', scope: 'calendar' }]);
 });
