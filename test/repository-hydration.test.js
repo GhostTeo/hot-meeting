@@ -284,3 +284,43 @@ test('senza giornata aperta sceglie l’ultima giornata chiusa per data', async 
 
   assert.equal(state.activeDay.id, 'latest');
 });
+
+test('lo snapshot locale riflette il turno aperto come quello remoto', async () => {
+  const repo = createLocalRepository({
+    initialState: { menu: [], services: {}, orders: [], shift: null, activeDay: null, online: false }
+  });
+
+  await repo.openService({
+    id: 'lunch-2026-08-25-1',
+    shift: 'lunch',
+    businessDate: '2026-08-25',
+    businessDayId: 'day-2026-08-25-1',
+    online: true
+  });
+
+  const snapshot = await repo.getState();
+
+  assert.equal(snapshot.shift, 'lunch');
+  assert.equal(snapshot.online, true);
+  assert.deepEqual(snapshot.activeDay, { id: 'day-2026-08-25-1', date: '2026-08-25', status: 'open' });
+});
+
+test('la chiusura locale libera il turno senza perdere la giornata operativa', async () => {
+  const repo = createLocalRepository({
+    initialState: { menu: [], services: {}, orders: [], shift: null, activeDay: null, online: false }
+  });
+  await repo.openService({
+    id: 'lunch-2026-08-25-1',
+    shift: 'lunch',
+    businessDate: '2026-08-25',
+    businessDayId: 'day-2026-08-25-1',
+    online: true
+  });
+
+  await repo.closeService('lunch-2026-08-25-1');
+  const snapshot = await repo.getState();
+
+  assert.equal(snapshot.shift, null);
+  assert.equal(snapshot.online, false);
+  assert.deepEqual(snapshot.activeDay, { id: 'day-2026-08-25-1', date: '2026-08-25', status: 'open' });
+});

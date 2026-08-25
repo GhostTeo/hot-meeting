@@ -22,6 +22,15 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
     }
   }
 
+  function openServiceEntry() {
+    return Object.values(state.services).find(service => service?.status === 'open') ?? null;
+  }
+
+  function snapshot() {
+    const open = openServiceEntry();
+    return copy({ ...state, shift: open?.shift ?? null, online: open?.online ?? false });
+  }
+
   function emit(scope) {
     const event = { type: 'repository.changed', scope };
     for (const listener of listeners) listener(event);
@@ -55,12 +64,15 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
     },
 
     async getState() {
-      return copy(state);
+      return snapshot();
     },
 
     async openService(service) {
       const opened = { ...copy(service), status: 'open' };
       state.services[opened.shift ?? opened.id] = opened;
+      if (opened.businessDate) {
+        state.activeDay = { id: opened.businessDayId ?? null, date: opened.businessDate, status: 'open' };
+      }
       persist();
       emit('services');
       return copy(opened);
@@ -124,7 +136,7 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
     },
 
     getSnapshot() {
-      return copy(state);
+      return snapshot();
     }
   };
 }
