@@ -60,6 +60,12 @@ configurare in produzione, in particolare il rate limiting davanti a
 L'accesso Creator usa l'autenticazione Supabase con email e password. Il ruolo
 viene letto da `app_metadata.role`, che deve valere `creator`.
 
+## Guida operativa
+
+`docs/operations.md` spiega l'uso quotidiano in pizzeria: giornata operativa,
+apertura e chiusura dei turni, calendario e ferie, cucina, storico, modifica di
+un ordine, report e limiti dimostrativi.
+
 ## Test
 
 ```bash

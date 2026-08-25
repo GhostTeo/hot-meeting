@@ -15,9 +15,12 @@ export function reopenService(service, openedAt = Date.now()) {
   };
 }
 
-export function serviceAcceptsOrders(service, mode) {
-  if (mode !== 'reopen') return true;
-  return service?.online !== false;
+// Aprire, iniziare una nuova giornata o riaprire significa sempre tornare ad
+// accettare ordini. La chiusura di un servizio azzera online_orders_enabled sul
+// database, quindi quel flag non puo' ricordare una sospensione voluta: la
+// sospensione vive solo mentre il servizio e' aperto, dal comando dedicato.
+export function serviceAcceptsOrders() {
+  return true;
 }
 
 export function closeService(service, closedAt = Date.now()) {

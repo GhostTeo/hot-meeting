@@ -14,11 +14,14 @@
 
 Aggiornato il 2026-08-25, branch `feature/operational-platform`.
 
-- Task 1-7: completati. Giornata operativa, report periodici, calendario e
+- Task 1-8: completati. Giornata operativa, report periodici, calendario e
   turni, schema Supabase con RLS e repository persistente con Realtime sono
   implementati e coperti da test, insieme a storico ordini, revisioni e
-  differenze di pagamento, recap cliente e interfaccia bilingue IT/EN.
-- Task 8: da fare. Verifica integrata e pubblicazione.
+  differenze di pagamento, recap cliente, interfaccia bilingue IT/EN e verifica
+  integrata sul progetto Supabase reale.
+
+Resta fuori dal piano: pubblicare l'app su un hosting, perche' finora gira solo
+in locale, e la schermata dedicata all'ordine preso in pizzeria.
 
 Il branch non e' ancora unito in `main`, che contiene soltanto il prototipo
 iniziale.
@@ -344,25 +347,25 @@ git commit -m "feat: add bilingual customer recap"
 **Interfaces:**
 - Produces: build navigabile, istruzioni Creator e checklist operativa.
 
-- [ ] **Step 1: Eseguire suite completa**
+- [x] **Step 1: Eseguire suite completa**
 
 Run: `npm test`
 Expected: tutti i test PASS, zero failure.
 
-- [ ] **Step 2: Verificare assenza popup browser e segreti**
+- [x] **Step 2: Verificare assenza popup browser e segreti**
 
 Run: `rg -n 'prompt\(|confirm\(|service_role|secret' . --glob '!docs/**'`
 Expected: nessun popup nativo e nessuna chiave privilegiata.
 
-- [ ] **Step 3: Provare i flussi nel browser**
+- [x] **Step 3: Provare i flussi nel browser**
 
 Aprire pranzo, creare `#01`, completarlo, chiudere e riaprire pranzo, creare cena, superare mezzanotte simulata, chiudere giornata, verificare nuova sequenza `#01`, storico e report.
 
-- [ ] **Step 4: Aggiornare documentazione**
+- [x] **Step 4: Aggiornare documentazione**
 
 Documentare configurazione calendario, ferie, chiusura modificabile, report, modifica ordine e limiti demo.
 
-- [ ] **Step 5: Commit e push**
+- [x] **Step 5: Commit e push**
 
 ```bash
 git add README.md docs/operations.md

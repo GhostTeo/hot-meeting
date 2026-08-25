@@ -297,8 +297,12 @@ test('un servizio appena aperto accetta ordini online', () => {
   assert.equal(serviceAcceptsOrders({ online: false, status: 'closed' }, 'new-day'), true);
 });
 
-test('la riapertura conserva la sospensione degli ordini online', () => {
-  assert.equal(serviceAcceptsOrders({ online: false, status: 'closed' }, 'reopen'), false);
+test('riaprire un servizio ricomincia ad accettare ordini', () => {
+  // close_service azzera online_orders_enabled, quindi il flag di un servizio
+  // chiuso non distingue "sospeso di proposito" da "semplicemente chiuso".
+  // Senza questa regola una riapertura mostrerebbe APERTO al Creator mentre il
+  // cliente resta bloccato senza spiegazione.
+  assert.equal(serviceAcceptsOrders({ online: false, status: 'closed' }, 'reopen'), true);
   assert.equal(serviceAcceptsOrders({ online: true, status: 'closed' }, 'reopen'), true);
 });
 
