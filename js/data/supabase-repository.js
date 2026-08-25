@@ -1,7 +1,7 @@
 import { paymentLabel } from '../domain.js';
 import { calendarFromClosures, closureRowFromException, weeklyClosureRow } from '../closures.js';
 const MENU_SELECT = `
-  id, slug, product_type, price_cents, available, sort_order,
+  id, slug, product_type, price_cents, available, sort_order, image_url,
   product_translations(locale, name, description),
   product_ingredients(is_included, removable, can_add, max_quantity, sort_order,
     ingredients(id, slug, additional_price_cents, ingredient_translations(locale, name))),
@@ -33,6 +33,7 @@ function mapProduct(row) {
       en: row.product_translations?.find(entry => entry.locale === 'en')?.description ?? ''
     },
     sortOrder: row.sort_order ?? 0,
+    imageUrl: row.image_url ?? null,
     price: row.price_cents / 100,
     available: row.available,
     ingredients: included
@@ -449,6 +450,28 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
     async saveMenuProduct(payload) {
       const result = await client.rpc('upsert_menu_product', { payload });
       return throwIfError(result);
+    },
+
+    async setProductPhoto(productId, imageUrl) {
+      const result = await client.rpc('set_product_photo', {
+        p_product_id: productId,
+        p_image_url: String(imageUrl ?? '').trim() || null
+      });
+      return throwIfError(result);
+    },
+
+    async uploadProductPhoto(file, name = 'foto') {
+      // Il file va nell'archivio pubblico e torna come indirizzo https, l'unico
+      // che una pagina https puo' mostrare. Il nome porta l'istante cosi'
+      // sostituire una foto non lascia in giro la vecchia con lo stesso nome.
+      const extension = (file?.name?.split('.').pop() ?? 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const path = `${name}-${Date.now()}.${extension || 'jpg'}`;
+      const { error } = await client.storage.from('menu-photos').upload(path, file, {
+        contentType: file?.type || 'image/jpeg',
+        upsert: false
+      });
+      if (error) throw error;
+      return client.storage.from('menu-photos').getPublicUrl(path).data.publicUrl;
     },
 
     async deleteMenuProduct(productId) {

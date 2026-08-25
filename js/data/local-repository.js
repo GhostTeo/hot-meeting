@@ -108,6 +108,17 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       emit('calendar');
     },
 
+    async setProductPhoto(productId, imageUrl) {
+      // Rispecchia set_product_photo: la foto e' un dato a se', si cambia
+      // senza toccare prezzo o ingredienti, e vuota vuol dire nessuna foto.
+      const product = state.menu.find(entry => entry.id === productId || entry.databaseId === productId);
+      if (!product) throw new Error(`Prodotto ${productId} non trovato`);
+      product.imageUrl = String(imageUrl ?? '').trim() || null;
+      persist();
+      emit('menu');
+      return product.imageUrl;
+    },
+
     async saveMenuProduct(payload) {
       // Rispecchia la RPC: stesso payload, stesso risultato letto dal menu.
       const id = payload.product_id ?? newId();
@@ -136,7 +147,10 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
         allergenIds: [...(payload.allergen_ids ?? [])]
       };
       const index = state.menu.findIndex(entry => entry.id === id);
-      if (index === -1) state.menu.push(product); else state.menu[index] = product;
+      // La foto non fa parte di questo payload: rifare il prodotto da capo non
+      // deve cancellarla.
+      if (index === -1) state.menu.push(product);
+      else state.menu[index] = { ...product, imageUrl: state.menu[index].imageUrl ?? null };
       persist();
       emit('menu');
       return id;

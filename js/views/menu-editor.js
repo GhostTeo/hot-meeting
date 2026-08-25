@@ -18,7 +18,8 @@ function localized(entry = {}, fallback = '') {
 export function emptyDraft() {
   return {
     id: null, type: 'pizza', nameIt: '', nameEn: '', descIt: '', descEn: '',
-    price: '', available: true, sortOrder: 0, included: [], additions: [], allergenIds: []
+    price: '', available: true, sortOrder: 0, imageUrl: '',
+    included: [], additions: [], allergenIds: []
   };
 }
 
@@ -35,6 +36,7 @@ export function draftFromProduct(product = {}) {
     price: euro(product.price),
     available: product.available !== false,
     sortOrder: Number(product.sortOrder ?? 0),
+    imageUrl: product.imageUrl ?? '',
     included: (product.ingredients ?? []).map((name, index) => ({
       ...localized(translations[index], name),
       removable: true
@@ -99,16 +101,19 @@ function escapeHtml(value = '') {
 
 const TYPE_LABELS = { pizza: 'Pizza', drink: 'Bibita' };
 
-export function menuPanel(menu = [], draft = null, allergens = [], money = value => `${value}`) {
+export function menuPanel(menu = [], draft = null, allergens = [], money = value => `${value}`, canUpload = false) {
+  const senzaFoto = menu.filter(product => !product.imageUrl).length;
   return `<h1>Menu</h1>
     <div class="actions"><button class="btn primary" id="menu-new">+ Nuovo prodotto</button></div>
+    ${senzaFoto ? `<p class="editor-note">${senzaFoto} prodotti senza foto: nel menu si vedono con uno sfondo colorato al posto dell'immagine.</p>` : ''}
     <div class="grid">${menu.map(product => menuCard(product, money)).join('') || '<p>Nessun prodotto: creane uno.</p>'}</div>
-    ${draft ? menuEditor(draft, allergens) : ''}`;
+    ${draft ? menuEditor(draft, allergens, canUpload) : ''}`;
 }
 
 function menuCard(product, money) {
   const included = (product.ingredients ?? []).join(' · ');
   return `<article class="card">
+    ${product.imageUrl ? `<img class="menu-thumb" src="${escapeHtml(product.imageUrl)}" alt="" loading="lazy">` : ''}
     <span class="pill">${escapeHtml(TYPE_LABELS[product.type] ?? product.type ?? '')} · posizione ${Number(product.sortOrder ?? 0)}</span>
     <h2>${escapeHtml(product.name ?? '')}</h2>
     ${product.names?.en ? `<p><small>EN: ${escapeHtml(product.names.en)}</small></p>` : '<p><small>Nessuna traduzione inglese</small></p>'}
@@ -141,7 +146,22 @@ function additionRow(row, index) {
   </div>`;
 }
 
-function menuEditor(draft, allergens) {
+function photoField(draft, canUpload) {
+  return `<h3>Foto del piatto</h3>
+    <div class="menu-photo-row">
+      ${draft.imageUrl
+        ? `<img class="menu-photo-preview" src="${escapeHtml(draft.imageUrl)}" alt="">`
+        : '<p><small>Nessuna foto: il piatto compare con uno sfondo colorato.</small></p>'}
+      <div style="flex:1;min-width:220px">
+        ${canUpload ? '<div class="field"><label>Carica una foto dal telefono o dal computer<input type="file" id="menu-photo-file" accept="image/jpeg,image/png,image/webp"></label></div>' : ''}
+        <div class="field"><label>Oppure incolla un indirizzo https<input id="menu-photo-url" value="${escapeHtml(draft.imageUrl ?? '')}" placeholder="https://..."></label></div>
+        ${draft.imageUrl ? '<button class="btn secondary" id="menu-photo-clear">Togli la foto</button>' : ''}
+      </div>
+    </div>
+    <p class="editor-note">Meglio una foto orizzontale, luce naturale, il piatto al centro. La si vede a circa 600 pixel di larghezza.</p>`;
+}
+
+function menuEditor(draft, allergens, canUpload) {
   return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="Modifica menu">
     <div class="modal-head">
       <div><span class="eyebrow">${draft.id ? 'Modifica prodotto' : 'Nuovo prodotto'}</span><h2>${escapeHtml(draft.nameIt || 'Senza nome')}</h2></div>
@@ -155,6 +175,8 @@ function menuEditor(draft, allergens) {
     <div class="field"><label>Prezzo in euro<input id="menu-price" value="${escapeHtml(draft.price)}" inputmode="decimal"></label></div>
     <div class="field"><label>Posizione nel menu<input id="menu-sort" value="${escapeHtml(String(draft.sortOrder))}" inputmode="numeric"></label></div>
     <label class="menu-check"><input type="checkbox" id="menu-available" ${draft.available ? 'checked' : ''}> disponibile</label>
+
+    ${photoField(draft, canUpload)}
 
     <h3>Ingredienti inclusi</h3>
     ${(draft.included ?? []).map(includedRow).join('') || '<p><small>Nessuno.</small></p>'}

@@ -32,6 +32,19 @@ test('una bozza vuota parte da una pizza disponibile', () => {
   assert.equal(draft.type, 'pizza');
   assert.equal(draft.available, true);
   assert.deepEqual(draft.included, []);
+  assert.equal(draft.imageUrl, '');
+});
+
+test('la foto viaggia nella bozza ma resta fuori dal payload del prodotto', () => {
+  const draft = draftFromProduct({
+    databaseId: 'p1', names: { it: 'Bufala' }, price: 11,
+    imageUrl: 'https://cdn.example/bufala.jpg'
+  });
+
+  assert.equal(draft.imageUrl, 'https://cdn.example/bufala.jpg');
+  // Prezzo e ingredienti cambiano insieme o niente; la foto no, ha una sua
+  // strada. Il payload ha uno schema chiuso: una chiave in piu' e' un errore.
+  assert.equal('image_url' in menuProductPayload(draft), false);
 });
 
 test('la bozza diventa il payload atteso dal database', () => {

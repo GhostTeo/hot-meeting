@@ -71,6 +71,23 @@ export function repositoryContract(label, createRepository) {
     assert.equal(creato.type, 'pizza');
   });
 
+  test(`${label}: la foto di un piatto si aggiunge e si toglie`, async () => {
+    const repo = await createRepository();
+    const id = await repo.saveMenuProduct({
+      product_type: 'pizza', price_cents: 900,
+      translations: { it: { name: 'Marinara' } },
+      ingredients: [{ name_it: 'Pomodoro', included: true }], allergen_ids: []
+    });
+
+    await repo.setProductPhoto(id, 'https://cdn.example/marinara.jpg');
+    const conFoto = (await repo.getMenu()).find(product => product.name === 'Marinara');
+    await repo.setProductPhoto(id, '');
+    const senzaFoto = (await repo.getMenu()).find(product => product.name === 'Marinara');
+
+    assert.equal(conFoto.imageUrl, 'https://cdn.example/marinara.jpg');
+    assert.equal(senzaFoto.imageUrl, null);
+  });
+
   test(`${label}: un prodotto mai venduto si puo eliminare`, async () => {
     const repo = await createRepository();
     const id = await repo.saveMenuProduct({
@@ -252,7 +269,7 @@ test('repository Supabase: preferisce il menu remoto e aggiorna la cache di fall
   assert.deepEqual(menu, [{
     id: 'margherita', databaseId: 'product-uuid', type: 'pizza', name: 'Margherita',
     names: { it: 'Margherita' }, descriptions: { it: '', en: '' }, sortOrder: 0,
-    price: 9, available: true,
+    imageUrl: null, price: 9, available: true,
     ingredients: [], ingredientNames: [], additions: [],
     allergens: [], allergenLabels: [], allergenIds: [], ingredientIds: {}
   }]);
