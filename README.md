@@ -18,7 +18,10 @@ ricevuti o in preparazione.
 
 Il calendario gestisce la chiusura settimanale (inizialmente il martedi',
 modificabile), i periodi di ferie e le aperture straordinarie. Nei giorni chiusi
-il cliente vede il motivo e gli ordini online sono bloccati.
+il cliente vede il motivo e gli ordini online sono bloccati. Il calendario e'
+condiviso: vive nella tabella `closures`, il cliente lo legge dalla vista
+pubblica `public_closure_calendar` e una modifica raggiunge gli altri
+dispositivi in tempo reale.
 
 ## Avvio locale
 
@@ -44,8 +47,12 @@ eventi. Nel repository e nel browser non devono mai finire la chiave
 impostare `globalThis.HOT_MEETING_CONFIG` prima di caricare `app.js`, oppure
 usare `mode: 'local'` per tornare al salvataggio nel browser.
 
+Sul database vivono menu, calendario, giornate operative, turni, ordini, righe,
+modifiche, movimenti di pagamento ed eventi. Restano nel browser soltanto i dati
+che non hanno senso condividere: carrello, schermata corrente e sessione.
+
 Schema, policy e RPC sono in `supabase/migrations/`. Per applicarli a un nuovo
-progetto servono `supabase/migrations/202608240001_core.sql` e poi
+progetto vanno eseguite in ordine tutte le migrazioni della cartella e poi
 `supabase/seed.sql`. Vedere `supabase/README.md` per i limiti di sicurezza da
 configurare in produzione, in particolare il rate limiting davanti a
 `create_public_order`.
