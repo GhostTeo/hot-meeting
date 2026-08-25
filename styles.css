@@ -418,6 +418,17 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 
 /* ---------- Servizio e cucina ---------- */
 
+.notify { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px }
+.notify-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.notify-line span { flex: 1; font-size: 13px; color: var(--ink-soft); min-width: 120px }
+.notify-line .btn { padding: 7px 12px; font-size: 12px; text-decoration: none; color: var(--ink) }
+.notify-none { font-size: 12.5px; color: var(--ink-soft); margin: 10px 0 0 }
+
+.login-card { max-width: 440px; margin: 40px auto }
+.login-card h1 { font-size: 42px; margin-bottom: 8px }
+.login-card p { color: var(--ink-soft); margin: 0 0 8px }
+.login-card .btn { width: 100%; padding: 14px; margin-top: 6px }
+
 .admin { display: grid; grid-template-columns: 210px 1fr; gap: 26px }
 .sidebar { display: grid; align-content: start; gap: 8px }
 .sidebar button { text-align: left }

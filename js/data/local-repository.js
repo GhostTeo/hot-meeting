@@ -108,6 +108,15 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       emit('calendar');
     },
 
+    async setServiceOven(serviceId, oven) {
+      const entry = Object.values(state.services).find(service => service?.id === serviceId);
+      if (!entry) throw new Error(`Servizio ${serviceId} non trovato`);
+      entry.oven = { slots: Number(oven.slots), bakeMinutes: Number(oven.bakeMinutes), bufferMinutes: Number(oven.bufferMinutes) };
+      persist();
+      emit('services');
+      return copy(entry);
+    },
+
     async setProductPhoto(productId, imageUrl) {
       // Rispecchia set_product_photo: la foto e' un dato a se', si cambia
       // senza toccare prezzo o ingredienti, e vuota vuol dire nessuna foto.

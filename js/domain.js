@@ -10,10 +10,6 @@ export function isValidItalianPhone(value) {
   return /^(?:\+39)?(?:3\d{9}|0\d{5,10})$/.test(phone);
 }
 
-export function estimateMinutes(pizzasAhead, capacity = 90) {
-  return Math.max(10, Math.ceil((Math.max(0, pizzasAhead) / Math.max(1, capacity)) * 60) + 10);
-}
-
 export function formatTimer(secondsRemaining) {
   const late = secondsRemaining < 0;
   const value = Math.abs(Math.trunc(secondsRemaining));

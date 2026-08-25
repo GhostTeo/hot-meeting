@@ -1,4 +1,5 @@
 import { nextDailySequence, resolveBusinessDate, resolveClosure } from '../operations.js';
+import { DEFAULT_OVEN, ovenThroughput } from '../oven.js';
 
 const ACTIVE_STATUSES = new Set(['received', 'preparing']);
 
@@ -163,7 +164,30 @@ export function servicePanel(state, now = Date.now()) {
         ? `<p>Giornata operativa <b>${selectedDay.date}</b> · turno non aperto</p>`
         : '<p>Nessuna sessione per la giornata.</p>';
     return `<article class="card"><span class="eyebrow">${shift === 'lunch' ? '☀️ Pranzo' : '🌙 Serale'}</span><h2>${isOpen ? 'APERTO' : 'Chiuso'}</h2>${context}${actions}</article>`;
-  }).join('')}</div>`;
+  }).join('')}</div>${ovenPanel(state)}`;
+}
+
+// Il forno decide l'attesa promessa a chi ordina: se cambia la teglia o il
+// tempo di cottura, deve cambiare anche qui, altrimenti l'orario che diamo
+// smette di essere vero.
+export function ovenPanel(state = {}) {
+  const service = Object.values(state.services || {}).find(entry => entry?.status === 'open');
+  const oven = service?.oven || DEFAULT_OVEN;
+  if (!service) {
+    return `<article class="card"><span class="eyebrow">Forno</span><h2>${oven.slots} pizze ogni ${oven.bakeMinutes} minuti</h2>
+      <p>Circa ${ovenThroughput(oven)} pizze all'ora. Apri un servizio per cambiare queste impostazioni.</p></article>`;
+  }
+  return `<article class="card"><span class="eyebrow">Forno</span>
+    <h2>${ovenThroughput(oven)} pizze all'ora</h2>
+    <p>${oven.slots} pizze insieme, ${oven.bakeMinutes} minuti a infornata, piu ${oven.bufferMinutes} minuti di margine per incartare e consegnare.</p>
+    <form id="oven-form" class="history-filters">
+      <label>Pizze nel forno<input name="slots" inputmode="numeric" value="${oven.slots}"></label>
+      <label>Minuti a infornata<input name="bakeMinutes" inputmode="numeric" value="${oven.bakeMinutes}"></label>
+      <label>Margine in minuti<input name="bufferMinutes" inputmode="numeric" value="${oven.bufferMinutes}"></label>
+      <label>&nbsp;<button class="btn primary" type="submit">Salva il forno</button></label>
+    </form>
+    <p class="editor-note">Vale per gli ordini che arrivano da adesso: quelli gia' in coda tengono l'orario promesso.</p>
+  </article>`;
 }
 
 export function shiftLabel(shift) {

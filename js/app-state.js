@@ -9,6 +9,7 @@ export function applyRepositorySnapshot(state, snapshot) {
     shift: snapshot.shift,
     online: snapshot.online,
     orders: snapshot.orders,
+    pizzasQueued: snapshot.pizzasQueued ?? null,
     adjustments: snapshot.adjustments ?? []
   };
 }

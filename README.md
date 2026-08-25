@@ -12,8 +12,27 @@ Il sito e' servito da GitHub Pages a partire dal branch `main`: ogni push su
 ## Aree
 
 - Cliente: menu in italiano o inglese, personalizzazione pizza con ingredienti e aggiunte, allergeni, note, carrello, checkout e recap dell'ordine.
-- Creator: calendario, apertura e chiusura turni, ordini, storico con modifica ordine, menu e report.
-- Cucina: comande operative con timer, ritardo in evidenza e stato pronto.
+- Creator: calendario, apertura e chiusura turni, ordini presi al telefono, storico con modifica ordine, menu, forno e report.
+- Cucina: comande operative con timer, ritardo in evidenza, stampa e stato pronto.
+
+Creator e Cucina sono la stessa area riservata: le comande portano nome e
+telefono di chi ordina, quindi la Cucina chiede l'accesso come il Creator.
+
+## Attesa promessa al cliente
+
+Le pizze escono a infornate, non a una a una: nel forno ce ne stanno sei e ogni
+infornata dura quattro minuti dalla stesura alla consegna, cioe' circa novanta
+pizze all'ora. Un ordine e' pronto quando esce l'infornata che contiene la sua
+ultima pizza, piu un margine per incartare e consegnare.
+
+Il conto lo fa il database, non il browser, e vale allo stesso modo per gli
+ordini dal sito e per quelli presi al telefono: la coda del forno e' una sola.
+Chi guarda il menu non puo' leggere gli ordini altrui, quindi il numero di pizze
+in coda arriva da una vista pubblica che espone solo quel totale.
+
+Le bibite non occupano il forno e non allungano l'attesa di nessuno. I tre numeri
+del forno si cambiano dal pannello Servizio; valgono per gli ordini successivi,
+quelli gia' in coda tengono l'orario promesso.
 
 ## Giornata operativa
 
@@ -150,6 +169,14 @@ email. L'ordine dal ristorante non e' ancora implementato.
 La comanda di cucina si stampa dal dialogo di stampa del browser (Cucina →
 **Stampa comanda**). Il collegamento diretto alla stampante Epson e lo scontrino
 fiscale non ci sono ancora: `docs/stampanti.md` spiega perche' e cosa serve.
+
+Gli avvisi al cliente non partono da soli: mandare un SMS senza che nessuno
+tocchi il telefono richiede un operatore esterno a pagamento con le sue
+credenziali. Cucina e Ordini offrono i messaggi gia' scritti (ricevuto, pronto,
+in ritardo) e aprono SMS o WhatsApp con il testo pronto: un tocco e parte.
+
+L'ordine preso al banco senza numero di telefono non e' possibile: il database
+chiede un numero italiano valido, perche' e' con quello che si avvisa.
 
 Le informazioni sugli allergeni derivano dai dati inseriti dal locale, puo'
 verificarsi contaminazione crociata e chi soffre di allergie gravi deve

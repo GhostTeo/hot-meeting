@@ -1,4 +1,5 @@
-import { isValidItalianPhone, estimateMinutes, formatTimer, summarizeOrders, calculateCustomizedPrice, DEMO_PAYMENT_METHODS, mergeMenuDefaults, customizationLines } from './domain.js';
+import { isValidItalianPhone, formatTimer, summarizeOrders, calculateCustomizedPrice, DEMO_PAYMENT_METHODS, mergeMenuDefaults, customizationLines } from './domain.js';
+import { DEFAULT_OVEN, ovenThroughput, readyInMinutes } from './oven.js';
 import { resolveBusinessDate, resolveClosure } from './operations.js';
 import { dailyReport } from './reports.js';
 import { calendarPanel, holidayException, openingException } from './views/calendar.js';
@@ -8,9 +9,11 @@ import { calculateAdjustment } from './payments.js';
 import { LOCALES, translate, translatePaymentMethod, translateProduct } from './i18n.js';
 import { buildCustomerRecap, orderReceiptPanel } from './views/order-receipt.js';
 import { draftFromProduct, emptyDraft, menuPanel, menuProductPayload } from './views/menu-editor.js';
+import { counterOrderIssues, counterOrderPanel, counterOrderPayload } from './views/counter-order.js';
 import { buildCloseDialog, closeService, nextServiceSequence, serviceAcceptsOrders, servicePanel, shiftLabel, startServiceWithCalendar } from './views/service.js';
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
 import { buildKitchenTicket } from './print/kitchen-ticket.js';
+import { MESSAGE_KINDS, customerMessage, smsLink, whatsappLink } from './messages.js';
 import { appConfig } from './config.js';
 import { bootstrapDataLayer, isCreatorSession } from './bootstrap.js';
 import { applyRepositorySnapshot, createRepositoryRefreshCoordinator } from './app-state.js';
@@ -20,7 +23,7 @@ const defaults={view:'customer',creator:false,locale:'it',receipt:null,shift:nul
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
  {id:'cola',type:'drink',name:'Cola',price:3,emoji:'🥤',ingredients:[],available:true}],orders:[]};
-let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let productFilter='pizza'; let menuDraft=null; let historyFilters={}; let editingOrderId=null; let editorQuantities={}; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false;
+let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let historyFilters={}; let editingOrderId=null; let editorQuantities={}; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false;
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
@@ -31,7 +34,13 @@ function pname(product){return translateProduct(product.names??{it:product.name}
 function localIngredient(name,translations){const match=(translations||[]).find(entry=>entry.it===name);return match?translateProduct(match,state.locale):name}
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(v)}
 function toast(text){const el=document.querySelector('#toast');el.textContent=text;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
-function pizzasAhead(){return state.orders.filter(o=>o.status==='preparing').reduce((n,o)=>n+o.items.reduce((s,i)=>s+i.quantity,0),0)}
+// Solo le pizze occupano il forno: le bibite non allungano l'attesa di nessuno.
+function isPizza(item){const product=state.menu.find(p=>String(p.databaseId??p.id)===String(item.productId??item.id));return product?product.type==='pizza':true}
+function countPizzas(items=[]){return items.filter(isPizza).reduce((n,i)=>n+Number(i.quantity??1),0)}
+// Chi guarda il menu non vede gli ordini altrui: la coda gliela dice il server.
+function pizzasAhead(){return state.pizzasQueued??state.orders.filter(o=>o.status==='preparing').reduce((n,o)=>n+countPizzas(o.items),0)}
+function ovenSettings(){return state.services[state.shift]?.oven??DEFAULT_OVEN}
+function waitMinutes(pizzas){return readyInMinutes({ahead:pizzasAhead(),pizzas,...ovenSettings()})}
 function currentClosure(date=resolveBusinessDate(Date.now(),state.activeDay)){const closure=resolveClosure(date,state.calendar.closedWeekdays,state.calendar.exceptions);return {...closure,date,message:closure.message||(closure.closed?'Chiuso per riposo settimanale':'')}}
 function orderingOpen(){return Boolean(state.shift&&state.services[state.shift]?.status==='open'&&state.online&&!currentClosure().closed)}
 function esc(value=''){return String(value).replace(/[&<>'"]/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'})[character])}
@@ -40,7 +49,7 @@ function langSwitch(){return `<div class="lang-switch">${LOCALES.map(code=>`<but
 function finishDialog(){const selector=dialogReturnFocus;pendingDialog=null;render();restoreDialogFocus(selector);dialogReturnFocus=null}
 function customer(){
   if(state.receipt)return orderReceiptPanel(state.receipt,state.locale,money);
-  const eta=estimateMinutes(pizzasAhead(),state.capacity),closure=currentClosure(),open=orderingOpen();
+  const eta=waitMinutes(Math.max(1,countPizzas(state.cart.map(i=>({...i,quantity:1}))))),closure=currentClosure(),open=orderingOpen();
   const total=state.cart.reduce((n,i)=>n+i.price,0);
   return `<section class="menu-hero">
       <div><span class="eyebrow">${t('app.tagline')}</span><h1>${t('app.headline')}</h1><p>${t('app.subtitle')}</p></div>
@@ -92,15 +101,30 @@ function cart(){const total=state.cart.reduce((n,i)=>n+i.price,0),closed=current
 
 function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.map((addition,index)=>`<div class="option-row"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}">\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}<div class="allergens"><b>${t('custom.allergens')}: ${(p.allergenLabels||[]).map(label=>translateProduct(label,state.locale)).join(', ')||(p.allergens||[]).join(', ')||t('custom.none')}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
 
-function creator(){if(!state.creator)return `<div class="card" style="max-width:440px;margin:auto"><span class="eyebrow">Area riservata</span><h1 style="font-size:44px">Creator</h1><div class="field"><label>${runtime.mode==='supabase'?'Email':'Username'}<input id="user" ${runtime.mode==='supabase'?'type="email" autocomplete="username"':''}></label></div><div class="field"><label>Password<input id="pass" type="password" autocomplete="current-password"></label></div><button class="btn primary" id="login">Accedi</button></div>`;return `${editingOrder()?orderEditorPanel(editingOrder(),editorQuantities,money):''}<div class="admin"><aside class="sidebar">${['service','calendar','orders','history','menu','report'].map(s=>`<button class="btn ${adminSection===s?'primary':'secondary'} admin-nav" data-section="${s}">${({service:'Servizio',calendar:'Calendario',orders:'Ordini',history:'Storico',menu:'Menu',report:'Report'})[s]}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
+// Cucina e Creator sono la stessa area riservata: le comande contengono nome e
+// telefono di chi ordina, non stanno dietro un semplice cambio di scheda.
+function loginPanel(titolo,sottotitolo){return `<div class="card login-card"><span class="eyebrow">Area riservata</span><h1>${titolo}</h1><p>${sottotitolo}</p><div class="field"><label>${runtime.mode==='supabase'?'Email':'Username'}<input id="user" ${runtime.mode==='supabase'?'type="email" autocomplete="username"':''}></label></div><div class="field"><label>Password<input id="pass" type="password" autocomplete="current-password"></label></div><button class="btn primary" id="login">Accedi</button></div>`}
+function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');return `${editingOrder()?orderEditorPanel(editingOrder(),editorQuantities,money):''}<div class="admin"><aside class="sidebar">${['service','calendar','orders','history','menu','report'].map(s=>`<button class="btn ${adminSection===s?'primary':'secondary'} admin-nav" data-section="${s}">${({service:'Servizio',calendar:'Calendario',orders:'Ordini',history:'Storico',menu:'Menu',report:'Report'})[s]}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
 function ordersWithAdjustments(){const movements=state.adjustments||[];return (state.orders||[]).map(order=>({...order,adjustments:movements.filter(movement=>String(movement.orderId)===String(order.id))}))}
 function editingOrder(){return editingOrderId?state.orders.find(o=>String(o.id)===String(editingOrderId)):null}
-function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders')return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dal ristorante</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div>${state.orders.map(orderCard).join('')||'<p>Nessun ordine.</p>'}`;if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||[],money,typeof repository.uploadProductPhoto==='function');const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();return `<h1>Report</h1><p class="history-count">Giornata ${day||'non ancora aperta'}</p><div class="grid">${reportCard('Pranzo',dailyReport(rows,day,'lunch'))}${reportCard('Serale',dailyReport(rows,day,'dinner'))}${reportCard('Giornata',dailyReport(rows,day))}</div>`}
+function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders'){const attesa=waitMinutes(1);return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dalla pizzeria</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div><p class="history-count">${pizzasAhead()} pizze in coda · un ordine di una pizza esce fra ${attesa} minuti</p>${state.orders.map(orderCard).join('')||'<p>Nessun ordine.</p>'}${counterDraft?counterOrderPanel(counterDraft,state.menu,money,DEMO_PAYMENT_METHODS):''}`}if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||[],money,typeof repository.uploadProductPhoto==='function');const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();return `<h1>Report</h1><p class="history-count">Giornata ${day||'non ancora aperta'}</p><div class="grid">${reportCard('Pranzo',dailyReport(rows,day,'lunch'))}${reportCard('Serale',dailyReport(rows,day,'dinner'))}${reportCard('Giornata',dailyReport(rows,day))}</div>`}
 function reportCard(label,r){return `<article class="card"><span class="eyebrow">${label}</span><div class="metric">${money(r.net)}</div><p>${r.orders} ordini · ${r.pizzas} pizze</p><small>Lordo ${money(r.gross)} · Trattenute ${money(r.fees)}<br>Supplementi ${money(r.supplements||0)} · Rimborsi ${money(r.refunds||0)}</small></article>`}
 function itemDetails(item){const changes=customizationLines(item);return `<p><b>${item.quantity}× ${item.name}</b>${changes.map(line=>`<br>${line}`).join('')}${item.note?`<br><span class="${/allerg|celiac|intoller/i.test(item.note)?'warning':''}">${item.note}</span>`:''}</p>`}
 function orderNumber(order){return order.sequence?`#${String(order.sequence).padStart(2,'0')}`:`#${order.id}`}
-function orderCard(o){return `<article class="card order"><span class="pill">${orderNumber(o)} · ${o.source}</span><h3>${o.customer}</h3><p>${o.payment||'Pagamento non indicato'}</p>${o.items.map(itemDetails).join('')}</article>`}
-function kitchen(){const active=state.orders.filter(o=>o.status==='preparing');return `<h1>Cucina</h1><p>${active.length} ordini in preparazione</p><div class="grid">${active.map(o=>{const seconds=Math.floor((o.readyAt-Date.now())/1000),timer=formatTimer(seconds);return `<article class="card order ${timer.late?'late':''}"><span class="pill">${orderNumber(o)} · ${o.source}</span><div class="timer">${timer.text}</div><p>Ordinato alle ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})} · ${o.payment||'Pagamento non indicato'}</p>${o.items.map(itemDetails).join('')}<div class="actions"><button class="btn primary ready" data-id="${o.id}">ORDINE PRONTO</button><button class="btn secondary ticket" data-id="${o.id}">Stampa comanda</button></div></article>`}).join('')||'<div class="card"><h2>Coda libera</h2><p>Nessuna comanda da preparare.</p></div>'}</div>`}
+// Il messaggio parte dal telefono della pizzeria, gia' scritto. L'invio
+// automatico richiederebbe un operatore SMS a pagamento: qui non si finge.
+function notifyRow(order,kinds){
+  if(!order.phone)return '<p class="notify-none">Nessun numero: non si puo avvisare.</p>';
+  return `<div class="notify">${kinds.map(kind=>{
+    const testo=customerMessage(kind,order,{pizzeriaPhone:appConfig.pizzeriaPhone??''});
+    const sms=smsLink(order.phone,testo),wa=whatsappLink(order.phone,testo);
+    const etichetta=MESSAGE_KINDS.find(entry=>entry.id===kind)?.label??kind;
+    if(!sms&&!wa)return '';
+    return `<div class="notify-line"><span>${etichetta}</span>${sms?`<a class="btn secondary" href="${esc(sms)}">SMS</a>`:''}${wa?`<a class="btn secondary" href="${esc(wa)}" target="_blank" rel="noopener">WhatsApp</a>`:''}</div>`;
+  }).join('')}</div>`;
+}
+function orderCard(o){return `<article class="card order"><span class="pill">${orderNumber(o)} · ${o.source}</span><h3>${esc(o.customer)}</h3><p>${o.payment||'Pagamento non indicato'}${o.readyAt?` · pronto verso le ${new Date(o.readyAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`:''}</p>${o.items.map(itemDetails).join('')}${notifyRow(o,['received','ready','late'])}</article>`}
+function kitchen(){if(!state.creator)return loginPanel('Cucina','Le comande contengono i dati di chi ordina: serve l accesso del Creator.');const active=state.orders.filter(o=>o.status==='preparing');return `<h1>Cucina</h1><p>${active.length} ordini in preparazione</p><div class="grid">${active.map(o=>{const seconds=Math.floor((o.readyAt-Date.now())/1000),timer=formatTimer(seconds);return `<article class="card order ${timer.late?'late':''}"><span class="pill">${orderNumber(o)} · ${o.source}</span><div class="timer">${timer.text}</div><p>Ordinato alle ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})} · ${o.payment||'Pagamento non indicato'}</p>${o.items.map(itemDetails).join('')}<div class="actions"><button class="btn primary ready" data-id="${o.id}">ORDINE PRONTO</button><button class="btn secondary ticket" data-id="${o.id}">Stampa comanda</button></div>${notifyRow(o,timer.late?['late','ready']:['ready'])}</article>`}).join('')||'<div class="card"><h2>Coda libera</h2><p>Nessuna comanda da preparare.</p></div>'}</div>`}
 function bind(){
   // Riscrivere solo #products lasciava i nuovi bottoni senza gestori: dopo un
   // cambio scheda "Personalizza e aggiungi" non rispondeva piu'.
@@ -148,16 +172,18 @@ function bind(){
     if(email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('Controlla l indirizzo email.');
     const paymentId=document.querySelector('input[name="payment"]:checked').value;
     const payment=DEMO_PAYMENT_METHODS.find(method=>method.id===paymentId);
-    const total=state.cart.reduce((n,i)=>n+i.price,0),eta=estimateMinutes(pizzasAhead(),state.capacity),businessDate=state.activeDay.date,service=state.services[state.shift],sequence=nextServiceSequence(state.orders,service,state.activeDay),fees=total*payment.feeRate;
     const cartItems=state.cart.map(i=>({...i,quantity:1}));
+    const total=state.cart.reduce((n,i)=>n+i.price,0),eta=waitMinutes(countPizzas(cartItems)),businessDate=state.activeDay.date,service=state.services[state.shift],sequence=nextServiceSequence(state.orders,service,state.activeDay),fees=total*payment.feeRate;
     const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:state.activeDay.id,serviceId:service.id,source:'WEB',customer:document.querySelector('#name').value||'Cliente',phone,email,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:state.shift,createdAt:Date.now(),readyAt:Date.now()+eta*60000,total,gross:total,fee:fees,fees,items:cartItems};
     try{
       // Numero pubblico e totale li decide il server: l'anteprima locale
       // servirebbe solo a mostrare un numero che poi cambia.
       const receipt=await repository.createOrder(order);
+      const promessi=Number(receipt?.etaMinutes??eta);
       state.receipt=buildCustomerRecap({
         ...order,...receipt,
         total:Number(receipt?.total??total),
+        readyAt:order.createdAt+promessi*60000,
         items:cartItems
       },{locale:state.locale,pizzeriaPhone:appConfig.pizzeriaPhone??null});
       state.cart=[];save();
@@ -200,8 +226,50 @@ function bind(){
   document.querySelector('#holiday-form')?.addEventListener('submit',event=>{event.preventDefault();const form=new FormData(event.currentTarget),holiday={from:form.get('from'),to:form.get('to'),message:form.get('message')};if(holiday.from>holiday.to)return toast('La data finale deve seguire quella iniziale.');void persistCalendar(()=>repository.addClosureException(holidayException(holiday)),'Periodo di ferie aggiunto.')});
   document.querySelector('#exceptional-opening-form')?.addEventListener('submit',event=>{event.preventDefault();const form=new FormData(event.currentTarget);void persistCalendar(()=>repository.addClosureException(openingException({date:form.get('date'),message:form.get('message')})),'Apertura straordinaria aggiunta.')});
   document.querySelectorAll('.remove-calendar-exception').forEach(b=>b.onclick=()=>{const id=b.dataset.closureId;if(!id)return toast('Eccezione senza identificativo: ricarica la pagina.');void persistCalendar(()=>repository.removeClosureException(id),'Eccezione rimossa.')});
+  document.querySelector('#oven-form')?.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const form=new FormData(event.currentTarget);
+    const service=state.services[state.shift];
+    if(!service)return toast('Apri prima un servizio.');
+    const oven={slots:Number(form.get('slots')),bakeMinutes:Number(form.get('bakeMinutes')),bufferMinutes:Number(form.get('bufferMinutes'))};
+    if(!(oven.slots>0&&oven.bakeMinutes>0&&oven.bufferMinutes>=0))return toast('Numeri non validi.');
+    try{await repository.setServiceOven(service.id,oven);await stateRefresh.refresh();render();toast(`Forno aggiornato: ${ovenThroughput(oven)} pizze all ora.`)}catch(error){toast(error?.message?`Non salvato: ${error.message}`:'Non salvato.')}
+  });
   document.querySelector('#toggle-online')?.addEventListener('click',async()=>{const service=state.services[state.shift];if(!service)return toast('Apri prima un servizio.');try{await repository.setServiceOnline(service.id,!state.online);if(runtime.mode==='supabase')await refreshRepositoryState();else{state.online=!state.online;save();render()}}catch{reportRepositoryError()}});
-  document.querySelector('#external')?.addEventListener('click',()=>{if(!state.shift)return toast('Apri prima un servizio.');toast('La schermata ordine ristorante sarà il prossimo flusso operativo.')});
+  function readCounterDraft(){
+    if(!counterDraft)return null;
+    const val=id=>document.querySelector(id)?.value??'';
+    return {
+      ...counterDraft,
+      name:val('#counter-name'),phone:val('#counter-phone'),note:val('#counter-note'),
+      payment:document.querySelector('input[name="counter-payment"]:checked')?.value??counterDraft.payment
+    };
+  }
+  document.querySelector('#external')?.addEventListener('click',()=>{
+    if(!state.shift)return toast('Apri prima un servizio.');
+    counterDraft={quantities:{},name:'',phone:'',note:'',payment:'cash'};render();
+  });
+  document.querySelector('#counter-close')?.addEventListener('click',()=>{counterDraft=null;render()});
+  document.querySelectorAll('.counter-minus,.counter-plus').forEach(b=>b.onclick=()=>{
+    const draft=readCounterDraft(),id=b.dataset.id;
+    const current=Number(draft.quantities[id]??0);
+    const next=b.classList.contains('counter-plus')?Math.min(20,current+1):Math.max(0,current-1);
+    counterDraft={...draft,quantities:{...draft.quantities,[id]:next}};render();
+  });
+  document.querySelector('#counter-save')?.addEventListener('click',async()=>{
+    const draft=readCounterDraft();
+    const problemi=counterOrderIssues(draft,state.menu);
+    if(problemi.length){counterDraft=draft;render();return toast(problemi[0])}
+    const service=state.services[state.shift];
+    if(!service)return toast('Apri prima un servizio.');
+    try{
+      // Stesso percorso degli ordini dal sito: numero, prezzo e attesa li
+      // decide il server, cosi' la coda del forno resta una sola.
+      await repository.createOrder({...counterOrderPayload(draft,state.menu),serviceId:service.id,businessDate:state.activeDay?.date,status:'preparing',shift:state.shift,createdAt:Date.now()});
+      await stateRefresh.refresh();
+      counterDraft=null;render();toast('Ordine in cucina.');
+    }catch(error){counterDraft=draft;render();toast(error?.message?`Non salvato: ${error.message}`:'Non salvato.')}
+  });
   ['date','shift','source','status'].forEach(key=>{const el=document.querySelector(`#history-${key}`);if(el)el.onchange=()=>{historyFilters={...historyFilters,[key]:el.value};render()}});
   const historyQuery=document.querySelector('#history-query');
   if(historyQuery)historyQuery.oninput=()=>{historyFilters={...historyFilters,query:historyQuery.value};refocusHistoryQuery=true;render()};

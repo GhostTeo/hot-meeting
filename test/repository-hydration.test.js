@@ -123,7 +123,7 @@ test('hydration remota compone menu, giornata, servizi e viste correnti ordini',
   assert.equal(state.orders[0].items[0].name, 'Margherita');
   assert.deepEqual(state.orders[0].items[0].additions, [{ id: '90000000-0000-4000-8000-000000000001', name: 'Olive', price: 1, quantity: 1 }]);
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
-    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'business_days', 'services', 'orders',
+    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'business_days', 'services', 'orders',
     'current_order_items', 'current_order_item_changes', 'current_order_totals', 'closures',
     'current_payment_adjustments'
   ]);
@@ -237,7 +237,7 @@ test('snapshot anonimo legge solo le viste pubbliche e non maschera i loro error
 
   assert.equal(state.services.lunch.id, 'service-public');
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
-    'products', 'public_opening_status', 'public_closure_calendar', 'allergens'
+    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status'
   ]);
 
   const cache = createLocalRepository({ initialState: { menu: [{ id: 'last-good' }] } });
@@ -532,6 +532,24 @@ test('la creazione ordine restituisce la ricevuta con numero e giornata', async 
   assert.deepEqual(receipt, {
     id: 'ord-9', businessDate: '2026-08-25', sequence: 3, status: 'preparing', gross: 21, fees: 0, total: 21
   });
+});
+
+test('la ricevuta porta i minuti decisi dal forno, non quelli stimati dal browser', async () => {
+  const client = constrainedClient({}, {
+    create_public_order: {
+      order_id: 'ord-9', business_date: '2026-08-25', sequence: 3,
+      status: 'preparing', gross_cents: 800, fee_cents: 0, total_cents: 800
+    },
+    public_order_eta: 21
+  });
+  const repo = createSupabaseRepository({ client, cache: createLocalRepository({}) });
+
+  const receipt = await repo.createOrder({
+    source: 'WEB', serviceId: 'svc', customer: 'Anna', phone: '333', paymentMethod: 'cash',
+    requestToken: 'token-1', items: []
+  });
+
+  assert.equal(receipt.etaMinutes, 21);
 });
 
 test('lo snapshot porta il catalogo allergeni per il pannello menu', async () => {

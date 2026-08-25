@@ -322,7 +322,7 @@ test('repository Supabase: instrada ordini e revisioni sulle RPC controllate', a
 
   const rpcCalls = client.calls.filter(call => call.operation === 'rpc');
   assert.deepEqual(rpcCalls.map(call => call.name), [
-    'create_public_order', 'create_restaurant_order', 'revise_order'
+    'create_public_order', 'public_order_eta', 'create_restaurant_order', 'revise_order'
   ]);
   assert.deepEqual(rpcCalls[0].args.payload, {
     request_token: 'token',

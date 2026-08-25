@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   normalizePhone,
   isValidItalianPhone,
-  estimateMinutes,
   formatTimer,
   summarizeOrders,
   calculateCustomizedPrice,
@@ -17,11 +16,6 @@ test('normalizza e convalida un cellulare italiano', () => {
   assert.equal(normalizePhone('+39 333-123 4567'), '+393331234567');
   assert.equal(isValidItalianPhone('+39 333-123 4567'), true);
   assert.equal(isValidItalianPhone('pizza123'), false);
-});
-
-test('stima la coda con capacità di 90 pizze ora e buffer', () => {
-  assert.equal(estimateMinutes(0, 90), 10);
-  assert.equal(estimateMinutes(15, 90), 20);
 });
 
 test('il timer passa dal countdown al ritardo', () => {

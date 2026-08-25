@@ -93,6 +93,13 @@ function mapService(row) {
     status: row.status,
     online: row.online_orders_enabled,
     capacity: row.capacity_pizzas_hour ?? 90,
+    // Il forno: quante pizze insieme, quanto dura un'infornata, quanto margine
+    // si tiene oltre la cottura. Da qui esce l'attesa promessa al cliente.
+    oven: {
+      slots: row.oven_slots ?? 6,
+      bakeMinutes: row.bake_minutes ?? 4,
+      bufferMinutes: row.handover_minutes ?? 5
+    },
     openedAt,
     closedAt: millis(row.closed_at),
     sessions: openedAt ? [{ openedAt, closedAt: millis(row.closed_at) }] : []
@@ -108,6 +115,9 @@ function mapServiceReceipt(row) {
     status: row.status,
     online_orders_enabled: row.online_orders_enabled,
     capacity_pizzas_hour: row.capacity_pizzas_hour,
+    oven_slots: row.oven_slots,
+    bake_minutes: row.bake_minutes,
+    handover_minutes: row.handover_minutes,
     opened_at: row.opened_at,
     closed_at: row.closed_at
   });
@@ -292,11 +302,12 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         orderedQuery(client, 'products', MENU_SELECT, 'sort_order'),
         orderedQuery(client, 'public_opening_status', '*', 'business_date', false),
         orderedQuery(client, 'public_closure_calendar', '*', 'closure_type'),
-        orderedQuery(client, 'allergens', '*', 'eu_order')
+        orderedQuery(client, 'allergens', '*', 'eu_order'),
+        client.from('public_queue_status').select('*')
       ]);
       const publicFailure = publicResults.find(result => result.error);
       if (publicFailure) throw publicFailure.error;
-      const [productRows, publicServices, publicClosures, allergenRows] = publicResults.map(result => result.data);
+      const [productRows, publicServices, publicClosures, allergenRows, queueRows] = publicResults.map(result => result.data);
 
       let dayRows = [];
       let creatorServices = [];
@@ -356,6 +367,12 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
           .map(row => ({ id: row.id, it: row.label_it, en: row.label_en })),
         services,
         activeDay,
+        // Le pizze in coda le dice il server: chi guarda il menu non puo'
+        // leggere gli ordini, e senza questo numero vedrebbe sempre l'attesa
+        // di una pizzeria vuota.
+        pizzasQueued: activeService
+          ? Number((queueRows ?? []).find(row => row.service_id === activeService.id)?.pizzas_queued ?? 0)
+          : 0,
         shift: activeService?.shift ?? null,
         online: activeService?.online ?? false,
         orders: composeOrders(orderRows, itemRows, changeRows, totalRows, serviceById),
@@ -423,7 +440,19 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         publicOrder ? 'create_public_order' : 'create_restaurant_order',
         { payload: orderPayload(order, publicOrder) }
       );
-      return mapReceipt(throwIfError(result));
+      const receipt = mapReceipt(throwIfError(result));
+      if (publicOrder && receipt.id) {
+        // L'orario promesso lo decide il forno, non il browser: si rilegge dal
+        // server col gettone dell'ordine, altrimenti la ricevuta direbbe
+        // l'attesa di una coda che il cliente non puo' vedere.
+        const eta = await client.rpc('public_order_eta', {
+          p_order_id: receipt.id,
+          p_request_token: order.requestToken
+        });
+        const minutes = Number(eta.data);
+        if (!eta.error && Number.isFinite(minutes)) receipt.etaMinutes = minutes;
+      }
+      return receipt;
     },
 
     async reviseOrder(orderId, revision) {
@@ -450,6 +479,16 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
     async saveMenuProduct(payload) {
       const result = await client.rpc('upsert_menu_product', { payload });
       return throwIfError(result);
+    },
+
+    async setServiceOven(serviceId, oven) {
+      const result = await client.rpc('set_service_oven', {
+        p_service_id: serviceId,
+        p_oven_slots: Number(oven.slots),
+        p_bake_minutes: Number(oven.bakeMinutes),
+        p_handover_minutes: Number(oven.bufferMinutes)
+      });
+      return mapService(throwIfError(result));
     },
 
     async setProductPhoto(productId, imageUrl) {
