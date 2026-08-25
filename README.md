@@ -86,6 +86,23 @@ Con Docker attivo e l'immagine `postgres:17-alpine` disponibile:
 npm run test:db
 ```
 
+## Menu
+
+Il menu si modifica in qualsiasi momento dal pannello Creator: creare un
+prodotto, rinominarlo in italiano e inglese, cambiarne descrizione, prezzo,
+tipo, posizione e disponibilita', definire gli ingredienti inclusi, le aggiunte
+con prezzo e quantita' massima, e dichiarare gli allergeni fra i 14 dell'elenco
+UE.
+
+Tutto passa da una sola operazione sul database, quindi non esiste un momento in
+cui una pizza ha gia' i nuovi ingredienti ma ancora il vecchio prezzo. Un
+prodotto mai venduto si elimina; uno gia' comparso in un ordine viene disattivato
+invece di essere cancellato, perche' cancellarlo riscriverebbe ordini passati.
+
+Un limite da conoscere: il prezzo di un'aggiunta appartiene all'ingrediente, non
+alla singola pizza. Cambiare il prezzo delle olive come aggiunta lo cambia su
+tutte le pizze che le offrono.
+
 ## Lingua e recap cliente
 
 Il cliente sceglie fra italiano e inglese. L'italiano e' la lingua sorgente: se
