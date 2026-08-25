@@ -4,8 +4,12 @@
 // eventi. Non inserire mai qui una chiave service-role o la password del
 // database. Per un ambiente diverso, impostare globalThis.HOT_MEETING_CONFIG
 // prima di caricare app.js.
+// pizzeriaPhone compare nel recap del cliente. Va impostato col numero vero
+// della pizzeria prima di aprire al pubblico: finche' resta null, il recap
+// invita a contattare il locale senza mostrare un numero inventato.
 export const appConfig = globalThis.HOT_MEETING_CONFIG ?? {
   mode: 'supabase',
+  pizzeriaPhone: null,
   supabaseUrl: 'https://nzoqtfbvyhemclwmwyah.supabase.co',
   supabaseAnonKey: 'sb_publishable_jEkf-urcoWX9eozzebbrrw_OXnd4t45'
 };

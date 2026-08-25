@@ -12,6 +12,13 @@ function italianName(translations = [], fallback = '') {
   return translations.find(translation => translation.locale === 'it')?.name ?? fallback;
 }
 
+// L'italiano resta l'identita' interna della riga; l'inglese e' solo una vista.
+function names(translations = [], fallback = '') {
+  const it = italianName(translations, fallback);
+  const en = translations.find(translation => translation.locale === 'en')?.name;
+  return en ? { it, en } : { it };
+}
+
 function mapProduct(row) {
   const relations = row.product_ingredients ?? [];
   const included = relations.filter(relation => relation.is_included);
@@ -20,17 +27,22 @@ function mapProduct(row) {
     databaseId: row.id,
     type: row.product_type,
     name: italianName(row.product_translations, row.slug),
+    names: names(row.product_translations, row.slug),
     price: row.price_cents / 100,
     available: row.available,
     ingredients: included
       .sort((left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0))
       .map(relation => italianName(relation.ingredients?.ingredient_translations, relation.ingredients?.slug)),
+    ingredientNames: included
+      .sort((left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0))
+      .map(relation => names(relation.ingredients?.ingredient_translations, relation.ingredients?.slug)),
     additions: relations
       .filter(relation => relation.can_add)
       .sort((left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0))
       .map(relation => ({
         id: relation.ingredients?.id,
         name: italianName(relation.ingredients?.ingredient_translations, relation.ingredients?.slug),
+        names: names(relation.ingredients?.ingredient_translations, relation.ingredients?.slug),
         price: relation.ingredients?.additional_price_cents / 100,
         maxQuantity: relation.max_quantity
       })),
@@ -39,6 +51,11 @@ function mapProduct(row) {
       .filter(Boolean)
       .sort((left, right) => (left.eu_order ?? 0) - (right.eu_order ?? 0))
       .map(allergen => allergen.label_it),
+    allergenLabels: (row.product_allergens ?? [])
+      .map(relation => relation.allergens)
+      .filter(Boolean)
+      .sort((left, right) => (left.eu_order ?? 0) - (right.eu_order ?? 0))
+      .map(allergen => ({ it: allergen.label_it, en: allergen.label_en })),
     ingredientIds: Object.fromEntries(included.map(relation => [
       italianName(relation.ingredients?.ingredient_translations, relation.ingredients?.slug),
       relation.ingredients?.id
@@ -146,6 +163,20 @@ function composeOrders(rows, itemRows, changeRows, totalRows, serviceById) {
       items: itemsByOrder.get(row.id) ?? []
     };
   });
+}
+
+// La ricevuta e' cio' che il cliente vede subito dopo la conferma: il numero
+// della giornata e il totale li decide il server, non il browser.
+function mapReceipt(result = {}) {
+  return {
+    id: result.order_id,
+    businessDate: result.business_date,
+    sequence: result.sequence,
+    status: result.status,
+    gross: (result.gross_cents ?? 0) / 100,
+    fees: (result.fee_cents ?? 0) / 100,
+    total: (result.total_cents ?? result.gross_cents ?? 0) / 100
+  };
 }
 
 function mapAdjustment(row) {
@@ -377,7 +408,7 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         publicOrder ? 'create_public_order' : 'create_restaurant_order',
         { payload: orderPayload(order, publicOrder) }
       );
-      return throwIfError(result);
+      return mapReceipt(throwIfError(result));
     },
 
     async reviseOrder(orderId, revision) {

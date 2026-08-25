@@ -54,6 +54,21 @@ export function repositoryContract(label, createRepository) {
     assert.deepEqual((await repo.getState()).calendar.closedWeekdays, [4]);
   });
 
+  test(`${label}: creare un ordine restituisce numero e giornata per la ricevuta`, async () => {
+    const repo = await createRepository();
+    await repo.openService({ id: 'lunch-1', shift: 'lunch' });
+
+    const receipt = await repo.createOrder({
+      id: 'order-7', serviceId: 'lunch-1', businessDate: '2026-08-25', sequence: 4,
+      items: [{ quantity: 1 }], total: 12
+    });
+
+    assert.equal(receipt.id, 'order-7');
+    assert.equal(receipt.businessDate, '2026-08-25');
+    assert.equal(receipt.sequence, 4);
+    assert.equal(receipt.total, 12);
+  });
+
   test(`${label}: un movimento di pagamento resta separato dall ordine`, async () => {
     const repo = await createRepository();
     await repo.openService({ id: 'lunch-1', shift: 'lunch' });
@@ -206,7 +221,9 @@ test('repository Supabase: preferisce il menu remoto e aggiorna la cache di fall
 
   assert.deepEqual(menu, [{
     id: 'margherita', databaseId: 'product-uuid', type: 'pizza', name: 'Margherita',
-    price: 9, available: true, ingredients: [], additions: [], allergens: [], ingredientIds: {}
+    names: { it: 'Margherita' }, price: 9, available: true,
+    ingredients: [], ingredientNames: [], additions: [],
+    allergens: [], allergenLabels: [], ingredientIds: {}
   }]);
   assert.deepEqual(await cache.getMenu(), menu);
 });

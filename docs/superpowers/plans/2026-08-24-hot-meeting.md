@@ -14,12 +14,11 @@
 
 Aggiornato il 2026-08-25, branch `feature/operational-platform`.
 
-- Task 1-6: completati. Giornata operativa, report periodici, calendario e
+- Task 1-7: completati. Giornata operativa, report periodici, calendario e
   turni, schema Supabase con RLS e repository persistente con Realtime sono
   implementati e coperti da test, insieme a storico ordini, revisioni e
-  differenze di pagamento.
-- Task 7-8: da fare. Recap cliente bilingue, verifica integrata e
-  pubblicazione.
+  differenze di pagamento, recap cliente e interfaccia bilingue IT/EN.
+- Task 8: da fare. Verifica integrata e pubblicazione.
 
 Il branch non e' ancora unito in `main`, che contiene soltanto il prototipo
 iniziale.
@@ -304,7 +303,7 @@ git commit -m "feat: add order history and revisions"
 **Interfaces:**
 - Produces: `buildPublicOrderCode`, `buildCustomerRecap`, `translate(key, locale)`.
 
-- [ ] **Step 1: Testare codice pubblico e fallback lingua**
+- [x] **Step 1: Testare codice pubblico e fallback lingua**
 
 ```js
 test('formatta codice giornaliero', () => {
@@ -315,21 +314,21 @@ test('usa italiano se manca la traduzione inglese', () => {
 });
 ```
 
-- [ ] **Step 2: Verificare RED**
+- [x] **Step 2: Verificare RED**
 
 Run: `node --test test/customer-recap.test.js`
 Expected: FAIL.
 
-- [ ] **Step 3: Implementare recap persistente e simulazioni invio**
+- [x] **Step 3: Implementare recap persistente e simulazioni invio**
 
 Telefono obbligatorio, email facoltativa; recap con numero pizzeria, pagamento, ETA, personalizzazioni, allergeni e note.
 
-- [ ] **Step 4: Verificare GREEN**
+- [x] **Step 4: Verificare GREEN**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add js/views/order-receipt.js js/i18n.js js/app.js test/customer-recap.test.js

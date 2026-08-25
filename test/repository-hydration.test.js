@@ -482,3 +482,51 @@ test('il movimento cambia stato solo tramite la RPC Creator', async () => {
   assert.equal(call.name, 'transition_payment_adjustment');
   assert.deepEqual(call.args, { p_adjustment_id: 'adj-1', p_target_status: 'recorded' });
 });
+
+test('il menu porta entrambe le lingue e le etichette allergeni tradotte', async () => {
+  const client = constrainedClient({
+    products: [{
+      id: 'p1', slug: 'bufala', product_type: 'pizza', price_cents: 1100, available: true, sort_order: 1,
+      product_translations: [
+        { locale: 'it', name: 'Bufala', description: '' },
+        { locale: 'en', name: 'Buffalo mozzarella', description: '' }
+      ],
+      product_ingredients: [{
+        is_included: false, removable: false, can_add: true, max_quantity: 2, sort_order: 0,
+        ingredients: {
+          id: 'ing-1', slug: 'acciughe', additional_price_cents: 200,
+          ingredient_translations: [{ locale: 'it', name: 'Acciughe' }, { locale: 'en', name: 'Anchovies' }]
+        }
+      }],
+      product_allergens: [{ allergens: { id: 'a1', label_it: 'Pesce', label_en: 'Fish', eu_order: 4 } }]
+    }],
+    public_opening_status: []
+  });
+  const repo = createSupabaseRepository({ client, accessMode: 'anon' });
+
+  const [product] = (await repo.getState()).menu;
+
+  assert.deepEqual(product.names, { it: 'Bufala', en: 'Buffalo mozzarella' });
+  assert.equal(product.name, 'Bufala');
+  assert.deepEqual(product.allergenLabels, [{ it: 'Pesce', en: 'Fish' }]);
+  assert.deepEqual(product.additions[0].names, { it: 'Acciughe', en: 'Anchovies' });
+  assert.deepEqual(product.ingredientNames, []);
+});
+
+test('la creazione ordine restituisce la ricevuta con numero e giornata', async () => {
+  const client = constrainedClient({}, {
+    create_public_order: {
+      order_id: 'ord-9', business_date: '2026-08-25', sequence: 3,
+      status: 'preparing', gross_cents: 2100, fee_cents: 0, total_cents: 2100
+    }
+  });
+  const repo = createSupabaseRepository({ client, cache: createLocalRepository({}) });
+
+  const receipt = await repo.createOrder({
+    source: 'WEB', serviceId: 'svc', customer: 'Anna', phone: '333', paymentMethod: 'cash', items: []
+  });
+
+  assert.deepEqual(receipt, {
+    id: 'ord-9', businessDate: '2026-08-25', sequence: 3, status: 'preparing', gross: 21, fees: 0, total: 21
+  });
+});

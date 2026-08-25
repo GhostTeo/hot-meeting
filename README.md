@@ -4,7 +4,7 @@ Web app per ordinazioni e gestione operativa della pizzeria Hot Meeting (Milano,
 
 ## Aree
 
-- Cliente: menu, personalizzazione pizza con ingredienti e aggiunte, allergeni, note, carrello e checkout.
+- Cliente: menu in italiano o inglese, personalizzazione pizza con ingredienti e aggiunte, allergeni, note, carrello, checkout e recap dell'ordine.
 - Creator: calendario, apertura e chiusura turni, ordini, storico con modifica ordine, menu e report.
 - Cucina: comande operative con timer, ritardo in evidenza e stato pronto.
 
@@ -72,6 +72,22 @@ Con Docker attivo e l'immagine `postgres:17-alpine` disponibile:
 ```bash
 npm run test:db
 ```
+
+## Lingua e recap cliente
+
+Il cliente sceglie fra italiano e inglese. L'italiano e' la lingua sorgente: se
+una traduzione inglese manca, si mostra l'italiano invece di lasciare un buco.
+Le etichette dei 14 allergeni UE arrivano gia' tradotte dal database.
+
+Dopo la conferma compare un recap con il numero pubblico della giornata (per
+esempio `25-08 · #03`), i prodotti con le personalizzazioni, gli allergeni
+dichiarati, le note, il totale, il pagamento e il tempo di attesa. Il recap
+resta anche ricaricando la pagina. Il telefono e' obbligatorio, l'email
+facoltativa; l'invio del riepilogo via messaggio o email e' dimostrativo.
+
+Il numero di telefono della pizzeria si imposta in `js/config.js` con
+`pizzeriaPhone`. Finche' resta `null` il recap invita a contattare il locale
+senza mostrare un numero inventato: va compilato prima di aprire al pubblico.
 
 ## Storico e modifica ordine
 
