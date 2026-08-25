@@ -101,6 +101,7 @@ test('hydration remota compone menu, giornata, servizi e viste correnti ordini',
     }],
     current_order_item_changes: [{
       order_item_id: '80000000-0000-4000-8000-000000000001', change_type: 'addition',
+      ingredient_id: '90000000-0000-4000-8000-000000000001',
       ingredient_name_snapshot: 'Olive', unit_price_cents: 100, quantity: 1
     }],
     current_order_totals: [{
@@ -120,10 +121,11 @@ test('hydration remota compone menu, giornata, servizi e viste correnti ordini',
   assert.equal(state.shift, 'dinner');
   assert.equal(state.orders[0].revision, 2);
   assert.equal(state.orders[0].items[0].name, 'Margherita');
-  assert.deepEqual(state.orders[0].items[0].additions, [{ name: 'Olive', price: 1, quantity: 1 }]);
+  assert.deepEqual(state.orders[0].items[0].additions, [{ id: '90000000-0000-4000-8000-000000000001', name: 'Olive', price: 1, quantity: 1 }]);
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
     'products', 'public_opening_status', 'public_closure_calendar', 'business_days', 'services', 'orders',
-    'current_order_items', 'current_order_item_changes', 'current_order_totals', 'closures'
+    'current_order_items', 'current_order_item_changes', 'current_order_totals', 'closures',
+    'current_payment_adjustments'
   ]);
 });
 
@@ -382,4 +384,90 @@ test('le chiusure arrivano in Realtime come le altre sorgenti', async () => {
   client.handlers.get('closures')({ eventType: 'INSERT', new: {}, old: {} });
 
   assert.deepEqual(events, [{ type: 'repository.changed', scope: 'calendar' }]);
+});
+
+test('le righe composte portano gli identificativi necessari a ricostruire una revisione', async () => {
+  const client = constrainedClient({
+    products: [],
+    public_opening_status: [],
+    business_days: [{ id: 'day-1', business_date: '2026-08-25', status: 'open' }],
+    services: [{ id: 'svc-1', business_day_id: 'day-1', shift: 'lunch', status: 'open', online_orders_enabled: true }],
+    orders: [{
+      id: 'ord-1', business_day_id: 'day-1', service_id: 'svc-1', sequence: 1,
+      source: 'web', status: 'preparing', customer_name: 'Anna', customer_phone: '3331234567',
+      payment_method: 'cash', created_at: '2026-08-25T10:00:00Z'
+    }],
+    current_order_items: [{
+      id: 'item-1', order_id: 'ord-1', revision: 1, product_id: 'prod-margherita',
+      product_name_snapshot: 'Margherita', unit_price_cents: 900, quantity: 2,
+      total_price_cents: 1800, allergens_snapshot: [], note: '', sort_order: 0
+    }],
+    current_order_item_changes: [{
+      order_item_id: 'item-1', change_type: 'addition', ingredient_id: 'ing-olive',
+      ingredient_name_snapshot: 'Olive', unit_price_cents: 100, quantity: 1
+    }],
+    current_order_totals: [{ order_id: 'ord-1', revision: 1, gross_cents: 1800, fee_cents: 0, total_cents: 1800 }]
+  });
+  const repo = createSupabaseRepository({ client, accessMode: 'creator' });
+
+  const [order] = (await repo.getState()).orders;
+  const [item] = order.items;
+
+  assert.equal(item.productId, 'prod-margherita');
+  assert.equal(item.unitPrice, 9);
+  assert.deepEqual(item.additions, [{ id: 'ing-olive', name: 'Olive', price: 1, quantity: 1 }]);
+});
+
+test('ogni ordine porta la giornata operativa a cui appartiene', async () => {
+  const client = constrainedClient({
+    products: [], public_opening_status: [],
+    business_days: [{ id: 'day-1', business_date: '2026-08-25', status: 'open' }],
+    services: [{ id: 'svc-1', business_day_id: 'day-1', shift: 'lunch', status: 'open', online_orders_enabled: true }],
+    orders: [{
+      id: 'ord-1', business_day_id: 'day-1', service_id: 'svc-1', sequence: 1, source: 'web',
+      status: 'preparing', customer_name: 'Anna', customer_phone: '333', payment_method: 'cash',
+      created_at: '2026-08-25T10:00:00Z'
+    }],
+    current_order_items: [], current_order_item_changes: [], current_order_totals: []
+  });
+  const repo = createSupabaseRepository({ client, accessMode: 'creator' });
+
+  const [order] = (await repo.getState()).orders;
+
+  assert.equal(order.businessDate, '2026-08-25');
+});
+
+test('un movimento di pagamento nasce in attesa e passa dalla RPC Creator', async () => {
+  const client = constrainedClient({}, { record_payment_adjustment: { id: 'adj-1' } });
+  const repo = createSupabaseRepository({ client, cache: createLocalRepository({}) });
+
+  await repo.recordPaymentAdjustment('ord-1', {
+    type: 'supplement', amount: 5, status: 'pending', method: 'cash', note: 'Aggiunta pizza'
+  });
+
+  const call = client.calls.find(entry => entry.type === 'rpc');
+  assert.equal(call.name, 'record_payment_adjustment');
+  assert.deepEqual(call.args, {
+    p_order_id: 'ord-1', p_adjustment_type: 'supplement', p_amount_cents: 500,
+    p_status: 'pending', p_payment_method: 'cash', p_note: 'Aggiunta pizza'
+  });
+});
+
+test('lo snapshot Creator espone i movimenti di pagamento correnti', async () => {
+  const client = constrainedClient({
+    products: [], public_opening_status: [], business_days: [], services: [], orders: [],
+    current_order_items: [], current_order_item_changes: [], current_order_totals: [],
+    current_payment_adjustments: [{
+      id: 'adj-1', order_id: 'ord-1', adjustment_type: 'supplement',
+      amount_cents: 500, status: 'pending', payment_method: 'cash', note: ''
+    }]
+  });
+  const repo = createSupabaseRepository({ client, accessMode: 'creator' });
+
+  const state = await repo.getState();
+
+  assert.deepEqual(state.adjustments, [{
+    id: 'adj-1', orderId: 'ord-1', type: 'supplement', amount: 5,
+    status: 'pending', method: 'cash', note: ''
+  }]);
 });

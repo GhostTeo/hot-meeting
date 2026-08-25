@@ -35,7 +35,10 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
     const calendar = Array.isArray(state.closures)
       ? calendarFromClosures(state.closures)
       : (state.calendar ?? { closedWeekdays: [], exceptions: [] });
-    return copy({ ...state, calendar, shift: open?.shift ?? null, online: open?.online ?? false });
+    return copy({
+      ...state, calendar, adjustments: state.adjustments ?? [],
+      shift: open?.shift ?? null, online: open?.online ?? false
+    });
   }
 
   function closureRows() {
@@ -103,6 +106,24 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       state.closures = closureRows().filter(entry => entry.id !== id);
       persist();
       emit('calendar');
+    },
+
+    async recordPaymentAdjustment(orderId, adjustment) {
+      // Il pagamento originale dell'ordine non viene mai toccato: la differenza
+      // vive come movimento separato, in attesa finche' non viene registrata.
+      const movement = {
+        id: newId(),
+        orderId,
+        type: adjustment.type,
+        amount: Number(adjustment.amount || 0),
+        status: adjustment.status ?? 'pending',
+        method: adjustment.method ?? null,
+        note: adjustment.note ?? ''
+      };
+      state.adjustments = [...(state.adjustments ?? []), movement];
+      persist();
+      emit('orders');
+      return copy(movement);
     },
 
     async openService(service) {

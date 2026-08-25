@@ -7,7 +7,8 @@ export function applyRepositorySnapshot(state, snapshot) {
     activeDay: snapshot.activeDay,
     shift: snapshot.shift,
     online: snapshot.online,
-    orders: snapshot.orders
+    orders: snapshot.orders,
+    adjustments: snapshot.adjustments ?? []
   };
 }
 

@@ -99,13 +99,18 @@ function composeOrders(rows, itemRows, changeRows, totalRows, serviceById) {
     const changes = changesByItem.get(item.id) ?? [];
     const mapped = {
       id: item.id,
+      productId: item.product_id,
       name: item.product_name_snapshot,
       quantity: item.quantity,
+      unitPrice: (item.unit_price_cents ?? 0) / 100,
       price: item.total_price_cents / 100,
       note: item.note,
       allergens: item.allergens_snapshot ?? [],
       removed: changes.filter(change => change.change_type === 'removed').map(change => change.ingredient_name_snapshot),
+      // Gli identificativi servono a ricostruire la stessa riga in una revisione.
+      removedIngredientIds: changes.filter(change => change.change_type === 'removed').map(change => change.ingredient_id),
       additions: changes.filter(change => change.change_type === 'addition').map(change => ({
+        id: change.ingredient_id,
         name: change.ingredient_name_snapshot,
         price: change.unit_price_cents / 100,
         quantity: change.quantity
@@ -130,6 +135,7 @@ function composeOrders(rows, itemRows, changeRows, totalRows, serviceById) {
       payment: paymentLabel(row.payment_method),
       status: row.status,
       shift: serviceById.get(row.service_id)?.shift,
+      businessDate: serviceById.get(row.service_id)?.businessDate,
       createdAt: millis(row.created_at),
       readyAt: millis(row.eta_ready_at),
       total: (total?.total_cents ?? row.total_cents) / 100,
@@ -140,6 +146,18 @@ function composeOrders(rows, itemRows, changeRows, totalRows, serviceById) {
       items: itemsByOrder.get(row.id) ?? []
     };
   });
+}
+
+function mapAdjustment(row) {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    type: row.adjustment_type,
+    amount: (row.amount_cents ?? 0) / 100,
+    status: row.status,
+    method: row.payment_method,
+    note: row.note ?? ''
+  };
 }
 
 function normalizeOrderItem(item) {
@@ -246,6 +264,7 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       let changeRows = [];
       let totalRows = [];
       let closureRows = null;
+      let adjustmentRows = [];
       if (accessModeValue(accessMode) === 'creator') {
         const operationalResults = await Promise.all([
           orderedQuery(client, 'business_days', '*', 'business_date', false),
@@ -254,11 +273,12 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
           orderedQuery(client, 'current_order_items', '*', 'sort_order'),
           orderedQuery(client, 'current_order_item_changes', '*', 'created_at'),
           orderedQuery(client, 'current_order_totals', '*', 'created_at'),
-          orderedQuery(client, 'closures', '*', 'created_at')
+          orderedQuery(client, 'closures', '*', 'created_at'),
+          orderedQuery(client, 'current_payment_adjustments', '*', 'created_at')
         ]);
         const operationalFailure = operationalResults.find(result => result.error);
         if (operationalFailure) throw operationalFailure.error;
-        [dayRows, creatorServices, orderRows, itemRows, changeRows, totalRows, closureRows] = operationalResults.map(result => result.data);
+        [dayRows, creatorServices, orderRows, itemRows, changeRows, totalRows, closureRows, adjustmentRows] = operationalResults.map(result => result.data);
       }
 
       const menu = productRows.map(mapProduct);
@@ -292,7 +312,8 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         activeDay,
         shift: activeService?.shift ?? null,
         online: activeService?.online ?? false,
-        orders: composeOrders(orderRows, itemRows, changeRows, totalRows, serviceById)
+        orders: composeOrders(orderRows, itemRows, changeRows, totalRows, serviceById),
+        adjustments: adjustmentRows.map(mapAdjustment)
       };
       await cache?.replaceState(snapshot);
       return snapshot;
@@ -364,6 +385,18 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         p_order_id: orderId,
         p_items: revision.items,
         p_reason: revision.reason
+      });
+      return throwIfError(result);
+    },
+
+    async recordPaymentAdjustment(orderId, adjustment) {
+      const result = await client.rpc('record_payment_adjustment', {
+        p_order_id: orderId,
+        p_adjustment_type: adjustment.type,
+        p_amount_cents: Math.round(Number(adjustment.amount || 0) * 100),
+        p_status: adjustment.status ?? 'pending',
+        p_payment_method: adjustment.method ?? null,
+        p_note: adjustment.note ?? ''
       });
       return throwIfError(result);
     },

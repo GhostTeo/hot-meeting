@@ -73,3 +73,14 @@ test('lo snapshot porta anche il calendario, non solo menu servizi e ordini', as
 
   assert.deepEqual(state.calendar, calendario);
 });
+
+test('lo snapshot porta anche i movimenti di pagamento', async () => {
+  const { applyRepositorySnapshot } = await import('../js/app-state.js');
+  const movimenti = [{ id: 'adj', orderId: 'ord', type: 'refund', amount: 3, status: 'pending' }];
+
+  const state = applyRepositorySnapshot({}, {
+    menu: [], services: {}, activeDay: null, shift: null, online: false, orders: [], adjustments: movimenti
+  });
+
+  assert.deepEqual(state.adjustments, movimenti);
+});

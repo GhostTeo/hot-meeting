@@ -54,6 +54,20 @@ export function repositoryContract(label, createRepository) {
     assert.deepEqual((await repo.getState()).calendar.closedWeekdays, [4]);
   });
 
+  test(`${label}: un movimento di pagamento resta separato dall ordine`, async () => {
+    const repo = await createRepository();
+    await repo.openService({ id: 'lunch-1', shift: 'lunch' });
+    await repo.createOrder({ id: 'order-9', serviceId: 'lunch-1', items: [{ quantity: 1 }], total: 20 });
+
+    await repo.recordPaymentAdjustment('order-9', { type: 'supplement', amount: 5, status: 'pending', method: 'cash' });
+    const state = await repo.getState();
+
+    assert.deepEqual(state.adjustments.map(movement => ({ orderId: movement.orderId, type: movement.type, amount: movement.amount, status: movement.status })), [
+      { orderId: 'order-9', type: 'supplement', amount: 5, status: 'pending' }
+    ]);
+    assert.equal(state.orders.find(order => order.id === 'order-9').total, 20);
+  });
+
   test(`${label}: un eccezione del calendario si rimuove per identificativo`, async () => {
     const repo = await createRepository();
     await repo.addClosureException({ date: '2026-08-15', closed: false, message: 'Ferragosto aperto' });
