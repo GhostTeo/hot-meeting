@@ -471,3 +471,14 @@ test('lo snapshot Creator espone i movimenti di pagamento correnti', async () =>
     status: 'pending', method: 'cash', note: ''
   }]);
 });
+
+test('il movimento cambia stato solo tramite la RPC Creator', async () => {
+  const client = constrainedClient({}, { transition_payment_adjustment: { id: 'adj-1' } });
+  const repo = createSupabaseRepository({ client, cache: createLocalRepository({}) });
+
+  await repo.transitionPaymentAdjustment('adj-1', 'recorded');
+
+  const call = client.calls.find(entry => entry.type === 'rpc');
+  assert.equal(call.name, 'transition_payment_adjustment');
+  assert.deepEqual(call.args, { p_adjustment_id: 'adj-1', p_target_status: 'recorded' });
+});

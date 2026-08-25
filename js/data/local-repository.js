@@ -126,6 +126,16 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       return copy(movement);
     },
 
+    async transitionPaymentAdjustment(adjustmentId, status) {
+      const movement = (state.adjustments ?? []).find(entry => entry.id === adjustmentId);
+      if (!movement) throw new Error(`Movimento ${adjustmentId} non trovato`);
+      if (movement.status !== 'pending') throw new Error('Un movimento gia concluso non cambia piu stato');
+      movement.status = status;
+      persist();
+      emit('orders');
+      return copy(movement);
+    },
+
     async openService(service) {
       const opened = { ...copy(service), status: 'open' };
       state.services[opened.shift ?? opened.id] = opened;

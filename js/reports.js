@@ -16,8 +16,10 @@ function pizzaCount(order) {
   }, 0);
 }
 
+// Un movimento entra nei conti solo quando e' stato davvero registrato:
+// quelli in attesa o annullati non hanno ancora mosso denaro.
 function adjustmentTotals(adjustments = []) {
-  return adjustments.reduce((totals, adjustment) => {
+  return adjustments.filter(adjustment => adjustment.status === 'recorded').reduce((totals, adjustment) => {
     const amount = Number(adjustment.amount || 0);
     if (adjustment.type === 'supplement') totals.supplements += amount;
     if (adjustment.type === 'refund') totals.refunds += amount;

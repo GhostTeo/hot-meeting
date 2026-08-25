@@ -14,11 +14,12 @@
 
 Aggiornato il 2026-08-25, branch `feature/operational-platform`.
 
-- Task 1-5: completati. Giornata operativa, report periodici, calendario e
+- Task 1-6: completati. Giornata operativa, report periodici, calendario e
   turni, schema Supabase con RLS e repository persistente con Realtime sono
-  implementati e coperti da test.
-- Task 6-8: da fare. Storico e revisioni ordine, recap cliente bilingue,
-  verifica integrata e pubblicazione.
+  implementati e coperti da test, insieme a storico ordini, revisioni e
+  differenze di pagamento.
+- Task 7-8: da fare. Recap cliente bilingue, verifica integrata e
+  pubblicazione.
 
 Il branch non e' ancora unito in `main`, che contiene soltanto il prototipo
 iniziale.
@@ -263,7 +264,7 @@ git commit -m "feat: add persistent realtime repository"
 **Interfaces:**
 - Produces: `reviseOrder(original, changes)`, `calculateAdjustment(originalTotal, revisedTotal)`.
 
-- [ ] **Step 1: Scrivere test fallenti per supplemento e rimborso**
+- [x] **Step 1: Scrivere test fallenti per supplemento e rimborso**
 
 ```js
 test('crea un supplemento senza alterare il pagamento originale', () => {
@@ -271,21 +272,21 @@ test('crea un supplemento senza alterare il pagamento originale', () => {
 });
 ```
 
-- [ ] **Step 2: Verificare RED**
+- [x] **Step 2: Verificare RED**
 
 Run: `node --test test/order-revisions.test.js`
 Expected: FAIL.
 
-- [ ] **Step 3: Implementare storico filtrabile ed editor revisione**
+- [x] **Step 3: Implementare storico filtrabile ed editor revisione**
 
 La revisione conserva snapshot precedente; supplementi demo offrono Apple Pay, Google Pay e cassa, mentre riduzioni creano rimborso demo.
 
-- [ ] **Step 4: Verificare GREEN e flusso navigato**
+- [x] **Step 4: Verificare GREEN e flusso navigato**
 
 Run: `npm test`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add js/views js/payments.js js/app.js test/order-revisions.test.js

@@ -68,6 +68,17 @@ export function repositoryContract(label, createRepository) {
     assert.equal(state.orders.find(order => order.id === 'order-9').total, 20);
   });
 
+  test(`${label}: un movimento in attesa puo essere registrato o annullato`, async () => {
+    const repo = await createRepository();
+    await repo.openService({ id: 'lunch-1', shift: 'lunch' });
+    await repo.createOrder({ id: 'order-9', serviceId: 'lunch-1', items: [{ quantity: 1 }], total: 20 });
+    const movement = await repo.recordPaymentAdjustment('order-9', { type: 'supplement', amount: 5, method: 'cash' });
+
+    await repo.transitionPaymentAdjustment(movement.id, 'recorded');
+
+    assert.equal((await repo.getState()).adjustments[0].status, 'recorded');
+  });
+
   test(`${label}: un eccezione del calendario si rimuove per identificativo`, async () => {
     const repo = await createRepository();
     await repo.addClosureException({ date: '2026-08-15', closed: false, message: 'Ferragosto aperto' });

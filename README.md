@@ -5,7 +5,7 @@ Web app per ordinazioni e gestione operativa della pizzeria Hot Meeting (Milano,
 ## Aree
 
 - Cliente: menu, personalizzazione pizza con ingredienti e aggiunte, allergeni, note, carrello e checkout.
-- Creator: calendario, apertura e chiusura turni, ordini, menu e report.
+- Creator: calendario, apertura e chiusura turni, ordini, storico con modifica ordine, menu e report.
 - Cucina: comande operative con timer, ritardo in evidenza e stato pronto.
 
 ## Giornata operativa
@@ -72,6 +72,18 @@ Con Docker attivo e l'immagine `postgres:17-alpine` disponibile:
 ```bash
 npm run test:db
 ```
+
+## Storico e modifica ordine
+
+Lo storico filtra per giornata operativa, turno, origine e stato, e cerca per
+cliente, telefono, pagamento o numero ordine scrivendo `#3`. Un ordine non viene
+mai cancellato: annullamenti e revisioni restano visibili.
+
+Modificando un ordine si crea una nuova revisione e la versione precedente
+resta nello storico. Il pagamento originale non viene mai alterato: la
+differenza diventa un movimento separato, un supplemento da incassare o un
+rimborso, che nasce in attesa e va poi registrato o annullato dal Creator. Nei
+report entrano soltanto i movimenti registrati.
 
 ## Limiti dimostrativi
 

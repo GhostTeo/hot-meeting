@@ -15,7 +15,7 @@ const sampleOrders = [
     pizzas: 2,
     gross: 20,
     fees: 1,
-    adjustments: [{ type: 'supplement', amount: 3 }]
+    adjustments: [{ type: 'supplement', amount: 3, status: 'recorded' }]
   },
   {
     businessDate: '2026-06-30',
@@ -24,7 +24,7 @@ const sampleOrders = [
     items: [{ quantity: 2 }, { quantity: 1 }],
     gross: 30,
     fees: 2,
-    adjustments: [{ type: 'refund', amount: 4 }]
+    adjustments: [{ type: 'refund', amount: 4, status: 'recorded' }]
   },
   {
     businessDate: '2026-07-01',
@@ -33,7 +33,7 @@ const sampleOrders = [
     pizzas: 5,
     gross: 50,
     fees: 5,
-    adjustments: [{ type: 'supplement', amount: 6 }]
+    adjustments: [{ type: 'supplement', amount: 6, status: 'recorded' }]
   },
   {
     businessDate: '2025-12-31',
@@ -132,4 +132,23 @@ test('un ordine checkout non conta le bibite come pizze', () => {
   };
 
   assert.equal(dailyReport([checkoutOrder], '2026-08-24').pizzas, 1);
+});
+
+test('nel report entrano solo i movimenti registrati, non quelli ancora in attesa', () => {
+  const orders = [{
+    businessDate: '2026-08-25', shift: 'lunch', status: 'ready', gross: 20, fees: 0,
+    items: [{ quantity: 1 }],
+    adjustments: [
+      { type: 'supplement', amount: 5, status: 'recorded' },
+      { type: 'supplement', amount: 7, status: 'pending' },
+      { type: 'refund', amount: 2, status: 'recorded' },
+      { type: 'refund', amount: 9, status: 'cancelled' }
+    ]
+  }];
+
+  const report = dailyReport(orders, '2026-08-25');
+
+  assert.equal(report.supplements, 5);
+  assert.equal(report.refunds, 2);
+  assert.equal(report.net, 23);
 });

@@ -82,7 +82,22 @@ function historyRow(order, movements, money) {
     <p>${escapeHtml(order.businessDate ?? '')} · ${escapeHtml(SHIFT_LABELS[order.shift] ?? '')} · ${escapeHtml(order.phone ?? '')}</p>
     <p>${escapeHtml(order.payment ?? '')} · <b>${money(Number(order.total ?? 0))}</b></p>
     ${(order.items ?? []).map(item => `<p>${Number(item.quantity ?? 1)}× ${escapeHtml(item.name ?? '')}</p>`).join('')}
-    ${movements.map(movement => `<p class="history-movement">${movement.type === 'supplement' ? 'Supplemento' : 'Rimborso'} ${money(Number(movement.amount ?? 0))} · ${escapeHtml(movement.status)}</p>`).join('')}
+    ${movements.map(movement => movementRow(movement, money)).join('')}
     ${['cancelled'].includes(order.status) ? '' : `<button class="btn secondary history-edit" data-id="${escapeHtml(order.id)}">Modifica ordine</button>`}
   </article>`;
+}
+
+const MOVEMENT_STATUS = { pending: 'in attesa', recorded: 'registrato', cancelled: 'annullato' };
+
+function movementRow(movement, money) {
+  const supplement = movement.type === 'supplement';
+  const label = supplement ? 'Supplemento' : 'Rimborso';
+  const actions = movement.status === 'pending'
+    ? `<button class="btn secondary movement-record" data-id="${escapeHtml(movement.id)}">${supplement ? 'Segna incassato' : 'Segna rimborsato'}</button>
+       <button class="btn secondary movement-cancel" data-id="${escapeHtml(movement.id)}">Annulla movimento</button>`
+    : '';
+  return `<div class="history-movement">
+    <span>${label} ${money(Number(movement.amount ?? 0))} · ${escapeHtml(MOVEMENT_STATUS[movement.status] ?? movement.status)}${movement.note ? ` · ${escapeHtml(movement.note)}` : ''}</span>
+    ${actions}
+  </div>`;
 }

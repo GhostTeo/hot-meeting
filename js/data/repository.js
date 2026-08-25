@@ -15,6 +15,7 @@ export const REPOSITORY_METHODS = Object.freeze([
   'reviseOrder',
   'updateOrderStatus',
   'recordPaymentAdjustment',
+  'transitionPaymentAdjustment',
   'subscribe'
 ]);
 

@@ -401,6 +401,14 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       return throwIfError(result);
     },
 
+    async transitionPaymentAdjustment(adjustmentId, status) {
+      const result = await client.rpc('transition_payment_adjustment', {
+        p_adjustment_id: adjustmentId,
+        p_target_status: status
+      });
+      return throwIfError(result);
+    },
+
     async updateOrderStatus(orderId, status) {
       const result = await client.rpc('transition_order_status', {
         p_order_id: orderId,
