@@ -5,17 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Hot Meeting · Milano Piola</title>
   <meta name="description" content="Ordina la pizza online e ritira a Milano, Piola.">
-  <meta name="theme-color" content="#24160f">
+  <meta name="theme-color" content="#faf6ef">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="customization.css">
 </head>
 <body>
   <header class="topbar">
-    <button class="brand" data-view="customer">HOT MEETING <small>Milano · Piola</small></button>
-    <nav><button data-view="customer">Cliente</button><button data-view="creator">Creator</button><button data-view="kitchen">Cucina</button></nav>
+    <button class="brand" data-view="customer">Hot Meeting <small>Milano · Piola</small></button>
+    <div id="topbar-side"></div>
   </header>
   <main id="app" aria-live="polite"></main>
+  <footer class="staff">
+    <small>Hot Meeting · Milano, zona Piola · versione beta</small>
+    <button data-view="customer">Menu</button>
+    <button data-view="creator">Creator</button>
+    <button data-view="kitchen">Cucina</button>
+  </footer>
   <div id="toast" role="status"></div>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script type="module" src="js/app.js"></script>
