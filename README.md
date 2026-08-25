@@ -26,19 +26,32 @@ il cliente vede il motivo e gli ordini online sono bloccati.
 python3 -m http.server 4173
 ```
 
-Aprire `http://localhost:4173`. Accesso Creator dimostrativo: `creator` /
-`pizza143`. Vale soltanto in modalita' locale: con Supabase attivo si usa
-l'autenticazione reale.
+Aprire `http://localhost:4173`. L'accesso Creator usa l'utente Supabase
+configurato. Le credenziali dimostrative `creator` / `pizza143` valgono
+soltanto quando `js/config.js` e' in `mode: 'local'`.
 
 ## Persistenza
 
-`js/config.js` imposta `mode: 'local'` e usa il salvataggio locale del browser,
-quindi i dati non sono condivisi tra dispositivi. Per la persistenza reale
-copiare `js/config.example.js` in `js/config.js`, impostare `mode: 'supabase'` e
-inserire URL e chiave pubblica anon del progetto. Nel browser non deve mai
-finire una chiave `service_role`. Lo schema, le policy RLS e le RPC sono in
-`supabase/migrations/`; vedere `supabase/README.md` per i limiti di sicurezza da
-configurare in produzione.
+L'app e' collegata a un progetto Supabase reale: menu, giornate operative,
+turni, ordini ed eventi vivono sul database, quindi cassa, cucina e cliente
+vedono gli stessi dati da dispositivi diversi.
+
+La configurazione e' in `js/config.js` e contiene soltanto URL del progetto e
+chiave publishable. Quella chiave e' pubblica per progettazione: la protezione
+reale sono le policy RLS, che negano all'anonimo ordini, telefoni, incassi ed
+eventi. Nel repository e nel browser non devono mai finire la chiave
+`service_role` ne' la password del database. Per puntare a un altro ambiente,
+impostare `globalThis.HOT_MEETING_CONFIG` prima di caricare `app.js`, oppure
+usare `mode: 'local'` per tornare al salvataggio nel browser.
+
+Schema, policy e RPC sono in `supabase/migrations/`. Per applicarli a un nuovo
+progetto servono `supabase/migrations/202608240001_core.sql` e poi
+`supabase/seed.sql`. Vedere `supabase/README.md` per i limiti di sicurezza da
+configurare in produzione, in particolare il rate limiting davanti a
+`create_public_order`.
+
+L'accesso Creator usa l'autenticazione Supabase con email e password. Il ruolo
+viene letto da `app_metadata.role`, che deve valere `creator`.
 
 ## Test
 
