@@ -10,6 +10,7 @@ import { buildCustomerRecap, orderReceiptPanel } from './views/order-receipt.js'
 import { draftFromProduct, emptyDraft, menuPanel, menuProductPayload } from './views/menu-editor.js';
 import { buildCloseDialog, closeService, nextServiceSequence, serviceAcceptsOrders, servicePanel, shiftLabel, startServiceWithCalendar } from './views/service.js';
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
+import { buildKitchenTicket } from './print/kitchen-ticket.js';
 import { appConfig } from './config.js';
 import { bootstrapDataLayer, isCreatorSession } from './bootstrap.js';
 import { applyRepositorySnapshot, createRepositoryRefreshCoordinator } from './app-state.js';
@@ -99,7 +100,7 @@ function reportCard(label,r){return `<article class="card"><span class="eyebrow"
 function itemDetails(item){const changes=customizationLines(item);return `<p><b>${item.quantity}× ${item.name}</b>${changes.map(line=>`<br>${line}`).join('')}${item.note?`<br><span class="${/allerg|celiac|intoller/i.test(item.note)?'warning':''}">${item.note}</span>`:''}</p>`}
 function orderNumber(order){return order.sequence?`#${String(order.sequence).padStart(2,'0')}`:`#${order.id}`}
 function orderCard(o){return `<article class="card order"><span class="pill">${orderNumber(o)} · ${o.source}</span><h3>${o.customer}</h3><p>${o.payment||'Pagamento non indicato'}</p>${o.items.map(itemDetails).join('')}</article>`}
-function kitchen(){const active=state.orders.filter(o=>o.status==='preparing');return `<h1>Cucina</h1><p>${active.length} ordini in preparazione</p><div class="grid">${active.map(o=>{const seconds=Math.floor((o.readyAt-Date.now())/1000),timer=formatTimer(seconds);return `<article class="card order ${timer.late?'late':''}"><span class="pill">${orderNumber(o)} · ${o.source}</span><div class="timer">${timer.text}</div><p>Ordinato alle ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})} · ${o.payment||'Pagamento non indicato'}</p>${o.items.map(itemDetails).join('')}<button class="btn primary ready" data-id="${o.id}">ORDINE PRONTO</button></article>`}).join('')||'<div class="card"><h2>Coda libera</h2><p>Nessuna comanda da preparare.</p></div>'}</div>`}
+function kitchen(){const active=state.orders.filter(o=>o.status==='preparing');return `<h1>Cucina</h1><p>${active.length} ordini in preparazione</p><div class="grid">${active.map(o=>{const seconds=Math.floor((o.readyAt-Date.now())/1000),timer=formatTimer(seconds);return `<article class="card order ${timer.late?'late':''}"><span class="pill">${orderNumber(o)} · ${o.source}</span><div class="timer">${timer.text}</div><p>Ordinato alle ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})} · ${o.payment||'Pagamento non indicato'}</p>${o.items.map(itemDetails).join('')}<div class="actions"><button class="btn primary ready" data-id="${o.id}">ORDINE PRONTO</button><button class="btn secondary ticket" data-id="${o.id}">Stampa comanda</button></div></article>`}).join('')||'<div class="card"><h2>Coda libera</h2><p>Nessuna comanda da preparare.</p></div>'}</div>`}
 function bind(){
   // Riscrivere solo #products lasciava i nuovi bottoni senza gestori: dopo un
   // cambio scheda "Personalizza e aggiungi" non rispondeva piu'.
@@ -304,6 +305,17 @@ function bind(){
     }catch(error){toast(error?.message?`Non eliminato: ${error.message}`:'Non eliminato.')}
   });
   document.querySelectorAll('.availability').forEach(b=>b.onclick=()=>{const p=state.menu.find(x=>x.id===b.dataset.id);p.available=!p.available;save();render();void repository.saveProduct(p).catch(reportRepositoryError)});
+  document.querySelectorAll('.ticket').forEach(b=>b.onclick=()=>{
+    const order=state.orders.find(o=>String(o.id)===b.dataset.id);
+    if(!order)return;
+    const area=document.querySelector('#print-area');
+    area.innerHTML=buildKitchenTicket(order).map(row=>{
+      if(row.kind==='separator')return '<div>'+'-'.repeat(42)+'</div>';
+      const cls=row.kind==='number'?' class="ticket-number"':row.alert?' class="ticket-alert"':'';
+      return `<div${cls}>${esc(row.text)}</div>`;
+    }).join('');
+    window.print();
+  });
   document.querySelectorAll('.ready').forEach(b=>b.onclick=async()=>{try{await repository.updateOrderStatus(b.dataset.id,'ready');if(runtime.mode==='supabase')await refreshRepositoryState();else{state.orders.find(o=>String(o.id)===b.dataset.id).status='ready';save();render()}}catch{reportRepositoryError()}});
   const dialog=document.querySelector('.dialog-card');
   if(dialog)releaseDialogTrap=trapDialogFocus(dialog,finishDialog);

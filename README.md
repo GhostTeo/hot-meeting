@@ -73,6 +73,10 @@ viene letto da `app_metadata.role`, che deve valere `creator`.
 apertura e chiusura dei turni, calendario e ferie, cucina, storico, modifica di
 un ordine, report e limiti dimostrativi.
 
+`docs/stampanti.md` riguarda le stampanti: comanda in cucina, scontrino fiscale,
+cosa serve sapere dei due apparecchi in pizzeria e perche' una pagina `https` non
+puo' parlare da sola con una stampante sulla rete locale.
+
 ## Test
 
 ```bash
@@ -102,6 +106,12 @@ invece di essere cancellato, perche' cancellarlo riscriverebbe ordini passati.
 Un limite da conoscere: il prezzo di un'aggiunta appartiene all'ingrediente, non
 alla singola pizza. Cambiare il prezzo delle olive come aggiunta lo cambia su
 tutte le pizze che le offrono.
+
+Ogni piatto puo' avere una **foto**, caricata dall'editor o indicata con un
+indirizzo `https`. Le immagini stanno in un archivio pubblico in lettura e
+scrivibile solo dal Creator. La foto segue una strada sua, separata dal resto
+del prodotto: si aggiunge o si toglie senza toccare prezzo e ingredienti. Un
+piatto senza foto compare con un riquadro decorato, mai con un'immagine rotta.
 
 ## Lingua e recap cliente
 
@@ -135,8 +145,11 @@ report entrano soltanto i movimenti registrati.
 
 Apple Pay e Google Pay sono etichette dimostrative senza processore di
 pagamento: nessun addebito, nessun rimborso reale. Non vengono inviati SMS ne'
-email. L'ordine dal ristorante e il menu bilingue IT/EN non sono ancora
-implementati. Le foto dei prodotti sono emoji.
+email. L'ordine dal ristorante non e' ancora implementato.
+
+La comanda di cucina si stampa dal dialogo di stampa del browser (Cucina →
+**Stampa comanda**). Il collegamento diretto alla stampante Epson e lo scontrino
+fiscale non ci sono ancora: `docs/stampanti.md` spiega perche' e cosa serve.
 
 Le informazioni sugli allergeni derivano dai dati inseriti dal locale, puo'
 verificarsi contaminazione crociata e chi soffre di allergie gravi deve

@@ -580,6 +580,30 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
   main { padding-bottom: 120px }
 }
 
+/* ---------- Comanda su carta ----------
+   Finche' la stampante non e' collegata direttamente, la comanda esce dal
+   dialogo di stampa del browser: sulla cassa la Epson e' gia' una stampante di
+   sistema, quindi funziona da subito. */
+
+#print-area { display: none }
+
+@media print {
+  body > * { display: none !important }
+
+  #print-area {
+    display: block !important;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    color: #000;
+  }
+
+  #print-area .ticket-number { font-size: 34px; font-weight: 800; margin-bottom: 4px }
+  #print-area .ticket-alert { font-weight: 800; text-decoration: underline }
+  @page { margin: 6mm }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important }
   .dish:hover { transform: none }
