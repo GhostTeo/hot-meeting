@@ -48,6 +48,11 @@ export const DEMO_PAYMENT_METHODS = Object.freeze([
   { id: 'google_pay', label: 'Google Pay · demo', feeRate: 0.02 }
 ]);
 
+export function paymentLabel(methodId) {
+  if (!methodId) return 'Pagamento non indicato';
+  return DEMO_PAYMENT_METHODS.find(method => method.id === methodId)?.label ?? methodId;
+}
+
 export function mergeMenuDefaults(savedMenu = [], defaultMenu = []) {
   const defaultsById = new Map(defaultMenu.map(product => [product.id, product]));
   const merged = savedMenu.map(product => ({ ...(defaultsById.get(product.id) || {}), ...product }));

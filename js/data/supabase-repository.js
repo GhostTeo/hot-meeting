@@ -1,3 +1,4 @@
+import { paymentLabel } from '../domain.js';
 const MENU_SELECT = `
   id, slug, product_type, price_cents, available, sort_order,
   product_translations(locale, name, description),
@@ -125,7 +126,7 @@ function composeOrders(rows, itemRows, changeRows, totalRows, serviceById) {
       customer: row.customer_name,
       phone: row.customer_phone,
       paymentMethod: row.payment_method,
-      payment: row.payment_method,
+      payment: paymentLabel(row.payment_method),
       status: row.status,
       shift: serviceById.get(row.service_id)?.shift,
       createdAt: millis(row.created_at),

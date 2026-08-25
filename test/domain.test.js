@@ -9,7 +9,8 @@ import {
   calculateCustomizedPrice,
   DEMO_PAYMENT_METHODS,
   mergeMenuDefaults,
-  customizationLines
+  customizationLines,
+  paymentLabel
 } from '../js/domain.js';
 
 test('normalizza e convalida un cellulare italiano', () => {
@@ -67,4 +68,14 @@ test('prepara le modifiche operative per la comanda cucina', () => {
     removed: ['Basilico'],
     additions: [{ name: 'Olive', quantity: 1 }, { name: 'Bufala', quantity: 0 }]
   }), ['SENZA: Basilico', 'AGGIUNTE: 1× Olive']);
+});
+
+test('traduce il metodo di pagamento in etichetta leggibile per la comanda', () => {
+  assert.equal(paymentLabel('cash'), 'Paga in cassa');
+  assert.equal(paymentLabel('apple_pay'), 'Apple Pay · demo');
+});
+
+test('un metodo di pagamento sconosciuto resta visibile senza inventare etichette', () => {
+  assert.equal(paymentLabel('bancomat'), 'bancomat');
+  assert.equal(paymentLabel(null), 'Pagamento non indicato');
 });
