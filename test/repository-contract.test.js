@@ -54,6 +54,36 @@ export function repositoryContract(label, createRepository) {
     assert.deepEqual((await repo.getState()).calendar.closedWeekdays, [4]);
   });
 
+  test(`${label}: il menu si modifica in qualsiasi momento`, async () => {
+    const repo = await createRepository();
+
+    const id = await repo.saveMenuProduct({
+      product_type: 'pizza', price_cents: 1200, available: true, sort_order: 2,
+      translations: { it: { name: 'Nduja' }, en: { name: 'Nduja' } },
+      ingredients: [{ name_it: 'Nduja', included: true }],
+      allergen_ids: []
+    });
+    const menu = await repo.getMenu();
+    const creato = menu.find(product => product.id === id || product.name === 'Nduja');
+
+    assert.ok(creato, 'il prodotto creato deve comparire nel menu');
+    assert.equal(creato.price, 12);
+    assert.equal(creato.type, 'pizza');
+  });
+
+  test(`${label}: un prodotto mai venduto si puo eliminare`, async () => {
+    const repo = await createRepository();
+    const id = await repo.saveMenuProduct({
+      product_type: 'drink', price_cents: 300,
+      translations: { it: { name: 'Acqua' } }, ingredients: [], allergen_ids: []
+    });
+
+    const esito = await repo.deleteMenuProduct(id);
+
+    assert.equal(esito, 'deleted');
+    assert.equal((await repo.getMenu()).some(product => product.name === 'Acqua'), false);
+  });
+
   test(`${label}: creare un ordine restituisce numero e giornata per la ricevuta`, async () => {
     const repo = await createRepository();
     await repo.openService({ id: 'lunch-1', shift: 'lunch' });
@@ -221,9 +251,10 @@ test('repository Supabase: preferisce il menu remoto e aggiorna la cache di fall
 
   assert.deepEqual(menu, [{
     id: 'margherita', databaseId: 'product-uuid', type: 'pizza', name: 'Margherita',
-    names: { it: 'Margherita' }, price: 9, available: true,
+    names: { it: 'Margherita' }, descriptions: { it: '', en: '' }, sortOrder: 0,
+    price: 9, available: true,
     ingredients: [], ingredientNames: [], additions: [],
-    allergens: [], allergenLabels: [], ingredientIds: {}
+    allergens: [], allergenLabels: [], allergenIds: [], ingredientIds: {}
   }]);
   assert.deepEqual(await cache.getMenu(), menu);
 });

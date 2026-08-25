@@ -5,6 +5,8 @@ export const REPOSITORY_METHODS = Object.freeze([
   'getMenu',
   'getState',
   'saveProduct',
+  'saveMenuProduct',
+  'deleteMenuProduct',
   'openService',
   'closeService',
   'setServiceOnline',

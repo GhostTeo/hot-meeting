@@ -108,6 +108,49 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       emit('calendar');
     },
 
+    async saveMenuProduct(payload) {
+      // Rispecchia la RPC: stesso payload, stesso risultato letto dal menu.
+      const id = payload.product_id ?? newId();
+      const it = payload.translations?.it ?? {};
+      const en = payload.translations?.en;
+      const rows = payload.ingredients ?? [];
+      const product = {
+        id,
+        databaseId: id,
+        type: payload.product_type ?? 'pizza',
+        name: it.name ?? '',
+        names: en?.name ? { it: it.name, en: en.name } : { it: it.name },
+        price: Number(payload.price_cents ?? 0) / 100,
+        available: payload.available !== false,
+        sortOrder: Number(payload.sort_order ?? 0),
+        ingredients: rows.filter(row => row.included).map(row => row.name_it),
+        ingredientNames: rows.filter(row => row.included)
+          .map(row => (row.name_en ? { it: row.name_it, en: row.name_en } : { it: row.name_it })),
+        additions: rows.filter(row => row.can_add ?? !row.included).map(row => ({
+          id: row.name_it,
+          name: row.name_it,
+          names: row.name_en ? { it: row.name_it, en: row.name_en } : { it: row.name_it },
+          price: Number(row.addition_price_cents ?? 0) / 100,
+          maxQuantity: Number(row.max_quantity ?? 1)
+        })),
+        allergenIds: [...(payload.allergen_ids ?? [])]
+      };
+      const index = state.menu.findIndex(entry => entry.id === id);
+      if (index === -1) state.menu.push(product); else state.menu[index] = product;
+      persist();
+      emit('menu');
+      return id;
+    },
+
+    async deleteMenuProduct(productId) {
+      const before = state.menu.length;
+      state.menu = state.menu.filter(entry => entry.id !== productId);
+      if (state.menu.length === before) throw new Error(`Prodotto ${productId} non trovato`);
+      persist();
+      emit('menu');
+      return 'deleted';
+    },
+
     async recordPaymentAdjustment(orderId, adjustment) {
       // Il pagamento originale dell'ordine non viene mai toccato: la differenza
       // vive come movimento separato, in attesa finche' non viene registrata.

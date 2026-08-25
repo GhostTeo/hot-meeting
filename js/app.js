@@ -7,6 +7,7 @@ import { orderEditorPanel, previewTotal, revisionItems, revisionIsValid } from '
 import { calculateAdjustment } from './payments.js';
 import { LOCALES, translate, translatePaymentMethod, translateProduct } from './i18n.js';
 import { buildCustomerRecap, orderReceiptPanel } from './views/order-receipt.js';
+import { draftFromProduct, emptyDraft, menuPanel, menuProductPayload } from './views/menu-editor.js';
 import { buildCloseDialog, closeService, nextServiceSequence, serviceAcceptsOrders, servicePanel, shiftLabel, startServiceWithCalendar } from './views/service.js';
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
 import { appConfig } from './config.js';
@@ -18,7 +19,7 @@ const defaults={view:'customer',creator:false,locale:'it',receipt:null,shift:nul
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
  {id:'cola',type:'drink',name:'Cola',price:3,emoji:'🥤',ingredients:[],available:true}],orders:[]};
-let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let productFilter='pizza'; let historyFilters={}; let editingOrderId=null; let editorQuantities={}; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false;
+let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let productFilter='pizza'; let menuDraft=null; let historyFilters={}; let editingOrderId=null; let editorQuantities={}; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false;
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
@@ -46,7 +47,7 @@ function customizer(){const p=customizing.product,price=calculateCustomizedPrice
 function creator(){if(!state.creator)return `<div class="card" style="max-width:440px;margin:auto"><span class="eyebrow">Area riservata</span><h1 style="font-size:44px">Creator</h1><div class="field"><label>${runtime.mode==='supabase'?'Email':'Username'}<input id="user" ${runtime.mode==='supabase'?'type="email" autocomplete="username"':''}></label></div><div class="field"><label>Password<input id="pass" type="password" autocomplete="current-password"></label></div><button class="btn primary" id="login">Accedi</button></div>`;return `${editingOrder()?orderEditorPanel(editingOrder(),editorQuantities,money):''}<div class="admin"><aside class="sidebar">${['service','calendar','orders','history','menu','report'].map(s=>`<button class="btn ${adminSection===s?'primary':'secondary'} admin-nav" data-section="${s}">${({service:'Servizio',calendar:'Calendario',orders:'Ordini',history:'Storico',menu:'Menu',report:'Report'})[s]}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
 function ordersWithAdjustments(){const movements=state.adjustments||[];return (state.orders||[]).map(order=>({...order,adjustments:movements.filter(movement=>String(movement.orderId)===String(order.id))}))}
 function editingOrder(){return editingOrderId?state.orders.find(o=>String(o.id)===String(editingOrderId)):null}
-function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders')return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dal ristorante</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div>${state.orders.map(orderCard).join('')||'<p>Nessun ordine.</p>'}`;if(adminSection==='menu')return `<h1>Menu</h1><div class="grid">${state.menu.map(p=>`<article class="card"><h2>${p.name}</h2><p>${money(p.price)}</p><button class="btn secondary availability" data-id="${p.id}">${p.available?'Disponibile':'Non disponibile'}</button></article>`).join('')}</div>`;const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();return `<h1>Report</h1><p class="history-count">Giornata ${day||'non ancora aperta'}</p><div class="grid">${reportCard('Pranzo',dailyReport(rows,day,'lunch'))}${reportCard('Serale',dailyReport(rows,day,'dinner'))}${reportCard('Giornata',dailyReport(rows,day))}</div>`}
+function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders')return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dal ristorante</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div>${state.orders.map(orderCard).join('')||'<p>Nessun ordine.</p>'}`;if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||[],money);const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();return `<h1>Report</h1><p class="history-count">Giornata ${day||'non ancora aperta'}</p><div class="grid">${reportCard('Pranzo',dailyReport(rows,day,'lunch'))}${reportCard('Serale',dailyReport(rows,day,'dinner'))}${reportCard('Giornata',dailyReport(rows,day))}</div>`}
 function reportCard(label,r){return `<article class="card"><span class="eyebrow">${label}</span><div class="metric">${money(r.net)}</div><p>${r.orders} ordini · ${r.pizzas} pizze</p><small>Lordo ${money(r.gross)} · Trattenute ${money(r.fees)}<br>Supplementi ${money(r.supplements||0)} · Rimborsi ${money(r.refunds||0)}</small></article>`}
 function itemDetails(item){const changes=customizationLines(item);return `<p><b>${item.quantity}× ${item.name}</b>${changes.map(line=>`<br>${line}`).join('')}${item.note?`<br><span class="${/allerg|celiac|intoller/i.test(item.note)?'warning':''}">${item.note}</span>`:''}</p>`}
 function orderNumber(order){return order.sequence?`#${String(order.sequence).padStart(2,'0')}`:`#${order.id}`}
@@ -193,6 +194,50 @@ function bind(){
   document.querySelectorAll('.movement-record,.movement-cancel').forEach(b=>b.onclick=async()=>{
     const status=b.classList.contains('movement-record')?'recorded':'cancelled';
     try{await repository.transitionPaymentAdjustment(b.dataset.id,status);await stateRefresh.refresh();render();toast(status==='recorded'?'Movimento registrato.':'Movimento annullato.')}catch{reportRepositoryError()}
+  });
+  function readMenuDraft(){
+    if(!menuDraft)return null;
+    const val=id=>document.querySelector(id)?.value??'';
+    const rows=(cls,key)=>[...document.querySelectorAll(cls)].reduce((acc,el)=>{const i=Number(el.dataset.index);acc[i]={...(acc[i]||{}),[key]:el.type==='checkbox'?el.checked:el.value};return acc},[]);
+    const inc=rows('.menu-inc-it','it'),incEn=rows('.menu-inc-en','en'),incRem=rows('.menu-inc-rem','removable');
+    const add=rows('.menu-add-it','it'),addEn=rows('.menu-add-en','en'),addPr=rows('.menu-add-price','price'),addMx=rows('.menu-add-max','max');
+    return {
+      ...menuDraft,
+      type:val('#menu-type')||menuDraft.type,
+      nameIt:val('#menu-name-it'),nameEn:val('#menu-name-en'),
+      descIt:val('#menu-desc-it'),descEn:val('#menu-desc-en'),
+      price:val('#menu-price'),sortOrder:val('#menu-sort')||0,
+      available:document.querySelector('#menu-available')?.checked??menuDraft.available,
+      included:(menuDraft.included||[]).map((row,i)=>({...row,...inc[i],...incEn[i],...incRem[i]})),
+      additions:(menuDraft.additions||[]).map((row,i)=>({...row,...add[i],...addEn[i],...addPr[i],...addMx[i]})),
+      allergenIds:[...document.querySelectorAll('.menu-allergen:checked')].map(el=>el.value)
+    };
+  }
+  document.querySelector('#menu-new')?.addEventListener('click',()=>{const last=Math.max(0,...(state.menu||[]).map(x=>Number(x.sortOrder||0)));menuDraft={...emptyDraft(),sortOrder:last+10};render()});
+  document.querySelectorAll('.menu-edit').forEach(b=>b.onclick=()=>{const product=state.menu.find(x=>x.id===b.dataset.id);if(product){menuDraft=draftFromProduct(product);render()}});
+  document.querySelector('#menu-close')?.addEventListener('click',()=>{menuDraft=null;render()});
+  document.querySelector('#menu-inc-add')?.addEventListener('click',()=>{menuDraft={...readMenuDraft(),included:[...(readMenuDraft().included||[]),{it:'',en:'',removable:true}]};render()});
+  document.querySelector('#menu-add-add')?.addEventListener('click',()=>{menuDraft={...readMenuDraft(),additions:[...(readMenuDraft().additions||[]),{it:'',en:'',price:'',max:1}]};render()});
+  document.querySelectorAll('.menu-inc-del').forEach(b=>b.onclick=()=>{const d=readMenuDraft();menuDraft={...d,included:d.included.filter((_,i)=>i!==Number(b.dataset.index))};render()});
+  document.querySelectorAll('.menu-add-del').forEach(b=>b.onclick=()=>{const d=readMenuDraft();menuDraft={...d,additions:d.additions.filter((_,i)=>i!==Number(b.dataset.index))};render()});
+  document.querySelector('#menu-save')?.addEventListener('click',async()=>{
+    const draft=readMenuDraft();
+    if(!String(draft.nameIt||'').trim())return toast('Il nome in italiano e obbligatorio.');
+    if(!(Number(String(draft.price).replace(',','.'))>0))return toast('Inserisci un prezzo maggiore di zero.');
+    try{
+      await repository.saveMenuProduct(menuProductPayload(draft));
+      await stateRefresh.refresh();
+      menuDraft=null;render();toast('Menu aggiornato.');
+    }catch(error){toast(error?.message?`Non salvato: ${error.message}`:'Non salvato.')}
+  });
+  document.querySelectorAll('.menu-delete').forEach(b=>b.onclick=async()=>{
+    const product=state.menu.find(x=>x.id===b.dataset.id);
+    if(!product)return;
+    try{
+      const esito=await repository.deleteMenuProduct(product.databaseId??product.id);
+      await stateRefresh.refresh();render();
+      toast(esito==='disabled'?'Prodotto gia venduto: disattivato, resta nello storico.':'Prodotto eliminato.');
+    }catch(error){toast(error?.message?`Non eliminato: ${error.message}`:'Non eliminato.')}
   });
   document.querySelectorAll('.availability').forEach(b=>b.onclick=()=>{const p=state.menu.find(x=>x.id===b.dataset.id);p.available=!p.available;save();render();void repository.saveProduct(p).catch(reportRepositoryError)});
   document.querySelectorAll('.ready').forEach(b=>b.onclick=async()=>{try{await repository.updateOrderStatus(b.dataset.id,'ready');if(runtime.mode==='supabase')await refreshRepositoryState();else{state.orders.find(o=>String(o.id)===b.dataset.id).status='ready';save();render()}}catch{reportRepositoryError()}});

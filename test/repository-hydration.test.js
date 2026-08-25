@@ -123,7 +123,7 @@ test('hydration remota compone menu, giornata, servizi e viste correnti ordini',
   assert.equal(state.orders[0].items[0].name, 'Margherita');
   assert.deepEqual(state.orders[0].items[0].additions, [{ id: '90000000-0000-4000-8000-000000000001', name: 'Olive', price: 1, quantity: 1 }]);
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
-    'products', 'public_opening_status', 'public_closure_calendar', 'business_days', 'services', 'orders',
+    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'business_days', 'services', 'orders',
     'current_order_items', 'current_order_item_changes', 'current_order_totals', 'closures',
     'current_payment_adjustments'
   ]);
@@ -237,7 +237,7 @@ test('snapshot anonimo legge solo le viste pubbliche e non maschera i loro error
 
   assert.equal(state.services.lunch.id, 'service-public');
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
-    'products', 'public_opening_status', 'public_closure_calendar'
+    'products', 'public_opening_status', 'public_closure_calendar', 'allergens'
   ]);
 
   const cache = createLocalRepository({ initialState: { menu: [{ id: 'last-good' }] } });
@@ -511,6 +511,9 @@ test('il menu porta entrambe le lingue e le etichette allergeni tradotte', async
   assert.deepEqual(product.allergenLabels, [{ it: 'Pesce', en: 'Fish' }]);
   assert.deepEqual(product.additions[0].names, { it: 'Acciughe', en: 'Anchovies' });
   assert.deepEqual(product.ingredientNames, []);
+  assert.deepEqual(product.allergenIds, ['a1']);
+  assert.deepEqual(product.descriptions, { it: '', en: '' });
+  assert.equal(product.sortOrder, 1);
 });
 
 test('la creazione ordine restituisce la ricevuta con numero e giornata', async () => {
@@ -529,4 +532,46 @@ test('la creazione ordine restituisce la ricevuta con numero e giornata', async 
   assert.deepEqual(receipt, {
     id: 'ord-9', businessDate: '2026-08-25', sequence: 3, status: 'preparing', gross: 21, fees: 0, total: 21
   });
+});
+
+test('lo snapshot porta il catalogo allergeni per il pannello menu', async () => {
+  const client = constrainedClient({
+    products: [], public_opening_status: [],
+    allergens: [
+      { id: 'a2', label_it: 'Crostacei', label_en: 'Crustaceans', eu_order: 2 },
+      { id: 'a1', label_it: 'Cereali contenenti glutine', label_en: 'Cereals containing gluten', eu_order: 1 }
+    ]
+  });
+  const repo = createSupabaseRepository({ client, accessMode: 'anon' });
+
+  const state = await repo.getState();
+
+  assert.deepEqual(state.allergens, [
+    { id: 'a1', it: 'Cereali contenenti glutine', en: 'Cereals containing gluten' },
+    { id: 'a2', it: 'Crostacei', en: 'Crustaceans' }
+  ]);
+});
+
+test('salvare un prodotto del menu passa dalla RPC Creator atomica', async () => {
+  const client = constrainedClient({}, { upsert_menu_product: 'prod-1' });
+  const repo = createSupabaseRepository({ client, cache: createLocalRepository({}) });
+
+  const id = await repo.saveMenuProduct({ translations: { it: { name: 'Nduja' } }, price_cents: 1200 });
+
+  const call = client.calls.find(entry => entry.type === 'rpc');
+  assert.equal(call.name, 'upsert_menu_product');
+  assert.deepEqual(call.args.payload.translations, { it: { name: 'Nduja' } });
+  assert.equal(id, 'prod-1');
+});
+
+test('eliminare un prodotto dice se e stato cancellato o soltanto disattivato', async () => {
+  const client = constrainedClient({}, { delete_menu_product: 'disabled' });
+  const repo = createSupabaseRepository({ client, cache: createLocalRepository({}) });
+
+  const esito = await repo.deleteMenuProduct('prod-1');
+
+  const call = client.calls.find(entry => entry.type === 'rpc');
+  assert.equal(call.name, 'delete_menu_product');
+  assert.deepEqual(call.args, { p_product_id: 'prod-1' });
+  assert.equal(esito, 'disabled');
 });

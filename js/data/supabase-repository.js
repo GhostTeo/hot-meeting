@@ -28,6 +28,11 @@ function mapProduct(row) {
     type: row.product_type,
     name: italianName(row.product_translations, row.slug),
     names: names(row.product_translations, row.slug),
+    descriptions: {
+      it: row.product_translations?.find(entry => entry.locale === 'it')?.description ?? '',
+      en: row.product_translations?.find(entry => entry.locale === 'en')?.description ?? ''
+    },
+    sortOrder: row.sort_order ?? 0,
     price: row.price_cents / 100,
     available: row.available,
     ingredients: included
@@ -56,6 +61,9 @@ function mapProduct(row) {
       .filter(Boolean)
       .sort((left, right) => (left.eu_order ?? 0) - (right.eu_order ?? 0))
       .map(allergen => ({ it: allergen.label_it, en: allergen.label_en })),
+    allergenIds: (row.product_allergens ?? [])
+      .map(relation => relation.allergens?.id)
+      .filter(Boolean),
     ingredientIds: Object.fromEntries(included.map(relation => [
       italianName(relation.ingredients?.ingredient_translations, relation.ingredients?.slug),
       relation.ingredients?.id
@@ -282,11 +290,12 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       const publicResults = await Promise.all([
         orderedQuery(client, 'products', MENU_SELECT, 'sort_order'),
         orderedQuery(client, 'public_opening_status', '*', 'business_date', false),
-        orderedQuery(client, 'public_closure_calendar', '*', 'closure_type')
+        orderedQuery(client, 'public_closure_calendar', '*', 'closure_type'),
+        orderedQuery(client, 'allergens', '*', 'eu_order')
       ]);
       const publicFailure = publicResults.find(result => result.error);
       if (publicFailure) throw publicFailure.error;
-      const [productRows, publicServices, publicClosures] = publicResults.map(result => result.data);
+      const [productRows, publicServices, publicClosures, allergenRows] = publicResults.map(result => result.data);
 
       let dayRows = [];
       let creatorServices = [];
@@ -339,6 +348,11 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       const snapshot = {
         menu,
         calendar: calendarFromClosures(closureRows ?? publicClosures),
+        // L'ordine dei 14 allergeni UE e' quello di legge: lo si applica qui
+        // cosi' resta lo stesso qualunque cosa restituisca il trasporto.
+        allergens: [...(allergenRows ?? [])]
+          .sort((left, right) => (left.eu_order ?? 0) - (right.eu_order ?? 0))
+          .map(row => ({ id: row.id, it: row.label_it, en: row.label_en })),
         services,
         activeDay,
         shift: activeService?.shift ?? null,
@@ -429,6 +443,16 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         p_payment_method: adjustment.method ?? null,
         p_note: adjustment.note ?? ''
       });
+      return throwIfError(result);
+    },
+
+    async saveMenuProduct(payload) {
+      const result = await client.rpc('upsert_menu_product', { payload });
+      return throwIfError(result);
+    },
+
+    async deleteMenuProduct(productId) {
+      const result = await client.rpc('delete_menu_product', { p_product_id: productId });
       return throwIfError(result);
     },
 

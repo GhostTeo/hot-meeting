@@ -2,6 +2,7 @@ export function applyRepositorySnapshot(state, snapshot) {
   return {
     ...state,
     menu: snapshot.menu,
+    allergens: snapshot.allergens ?? state.allergens ?? [],
     calendar: snapshot.calendar ?? state.calendar,
     services: snapshot.services,
     activeDay: snapshot.activeDay,

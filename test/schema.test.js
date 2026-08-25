@@ -225,3 +225,28 @@ test('registra nel publication Realtime tutte le sorgenti riconciliate dal repos
   assert.match(sql, /create policy services_public_realtime_read[\s\S]*?to anon, authenticated[\s\S]*?is_open_business_day\(business_day_id\)/i);
   assert.match(sql, /grant select on table public\.services to anon/i);
 });
+
+test('la modifica menu passa da RPC Creator con schema chiuso', () => {
+  const sql = allMigrationsSql();
+
+  assert.match(sql, /create or replace function public\.upsert_menu_product\(payload jsonb\)/i);
+  assert.match(sql, /create or replace function public\.delete_menu_product\(p_product_id uuid\)/i);
+  // Solo il Creator, e nessuna chiave sconosciuta accettata dal payload.
+  assert.match(sql, /upsert_menu_product[\s\S]*?creator role required/i);
+  assert.match(sql, /upsert_menu_product[\s\S]*?'product_id', 'slug', 'product_type', 'price_cents'/i);
+  assert.match(sql, /revoke all on function public\.upsert_menu_product\(jsonb\) from public, anon/i);
+  assert.match(sql, /grant execute on function public\.upsert_menu_product\(jsonb\) to authenticated/i);
+});
+
+test('un prodotto gia usato in un ordine non si cancella ma si disattiva', () => {
+  const sql = allMigrationsSql();
+
+  assert.match(sql, /delete_menu_product[\s\S]*?order_items[\s\S]*?disattiva|delete_menu_product[\s\S]*?order_items[\s\S]*?available = false/i);
+});
+
+test('ogni modifica al menu lascia una traccia negli eventi', () => {
+  const sql = allMigrationsSql();
+
+  assert.match(sql, /upsert_menu_product[\s\S]*?insert into public\.events/i);
+  assert.match(sql, /delete_menu_product[\s\S]*?insert into public\.events/i);
+});
