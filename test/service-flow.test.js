@@ -6,6 +6,7 @@ import {
   nextServiceSequence,
   reopenService,
   servicePanel,
+  serviceAcceptsOrders,
   startServiceWithCalendar,
   startServiceTransition
 } from '../js/views/service.js';
@@ -287,4 +288,14 @@ test('le ferie e l’apertura straordinaria diventano eccezioni esplicite', () =
     { date: '2026-08-25', closed: false, message: 'Apertura straordinaria' }
   ]);
   assert.deepEqual(calendar.exceptions, []);
+});
+
+test('un servizio appena aperto accetta ordini online', () => {
+  assert.equal(serviceAcceptsOrders(null, 'open'), true);
+  assert.equal(serviceAcceptsOrders({ online: false, status: 'closed' }, 'new-day'), true);
+});
+
+test('la riapertura conserva la sospensione degli ordini online', () => {
+  assert.equal(serviceAcceptsOrders({ online: false, status: 'closed' }, 'reopen'), false);
+  assert.equal(serviceAcceptsOrders({ online: true, status: 'closed' }, 'reopen'), true);
 });

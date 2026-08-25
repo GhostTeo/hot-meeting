@@ -2,7 +2,7 @@ import { isValidItalianPhone, estimateMinutes, formatTimer, summarizeOrders, cal
 import { resolveBusinessDate, resolveClosure } from './operations.js';
 import { dailyReport } from './reports.js';
 import { addExceptionalOpening, addHoliday, calendarPanel, updateWeeklyClosure } from './views/calendar.js';
-import { buildCloseDialog, closeService, nextServiceSequence, servicePanel, shiftLabel, startServiceWithCalendar } from './views/service.js';
+import { buildCloseDialog, closeService, nextServiceSequence, serviceAcceptsOrders, servicePanel, shiftLabel, startServiceWithCalendar } from './views/service.js';
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
 import { appConfig } from './config.js';
 import { bootstrapDataLayer, isCreatorSession } from './bootstrap.js';
@@ -97,7 +97,7 @@ function bind(){
     const result=startServiceWithCalendar(state,shift,Date.now(),action,state.calendar);
     if(!result.started)return toast(result.closure.message||'Chiuso per riposo settimanale');
     state=result.state;
-    try{await repository.openService({...state.services[shift],action:result.mode==='reopen'?'reopen':'open',online:state.online,capacity:state.capacity});if(runtime.mode==='supabase')await refreshRepositoryState();else{save();render()};toast(result.mode==='reopen'?'Servizio riaperto.':result.mode==='new-day'?'Nuova giornata aperta.':'Servizio aperto.')}catch{reportRepositoryError()}
+    try{await repository.openService({...state.services[shift],action:result.mode==='reopen'?'reopen':'open',online:serviceAcceptsOrders(state.services[shift],result.mode),capacity:state.capacity});if(runtime.mode==='supabase')await refreshRepositoryState();else{save();render()};toast(result.mode==='reopen'?'Servizio riaperto.':result.mode==='new-day'?'Nuova giornata aperta.':'Servizio aperto.')}catch{reportRepositoryError()}
   });
   document.querySelectorAll('[data-dialog-action]').forEach(b=>b.onclick=()=>{
     if(b.dataset.dialogAction==='confirm-close'){

@@ -15,6 +15,11 @@ export function reopenService(service, openedAt = Date.now()) {
   };
 }
 
+export function serviceAcceptsOrders(service, mode) {
+  if (mode !== 'reopen') return true;
+  return service?.online !== false;
+}
+
 export function closeService(service, closedAt = Date.now()) {
   const sessions = [...(service.sessions || [])];
   const current = sessions.at(-1);
