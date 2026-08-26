@@ -3,6 +3,7 @@
 // quali allergeni sono dichiarati e come contattare la pizzeria.
 
 import { translate, translatePaymentMethod, translateProduct } from '../i18n.js';
+import { allergenNames } from '../allergens.js';
 
 export function buildPublicOrderCode(businessDate, sequence) {
   const [, month, day] = String(businessDate ?? '').split('-');
@@ -23,7 +24,7 @@ function recapItem(item, locale) {
       .filter(addition => Number(addition.quantity ?? 0) > 0)
       .map(addition => `${addition.quantity}× ${translateProduct(addition.names ?? { it: addition.name }, locale)}`),
     note: item.note ?? '',
-    allergens: (item.allergenLabels ?? []).map(label => translateProduct(label, locale))
+    allergens: allergenNames(item.allergenLabels ?? item.allergens ?? [], locale)
   };
 }
 

@@ -64,3 +64,17 @@ test('il testo si spezza sulla larghezza della carta', () => {
     'riga sola'
   ]);
 });
+
+test('la comanda stampata dichiara gli allergeni di ogni riga', () => {
+  const ticket = buildKitchenTicket({
+    sequence: 3,
+    items: [{
+      quantity: 1, name: 'Napoli',
+      allergens: [{ label_it: 'Cereali contenenti glutine' }, { label_it: 'Pesce' }]
+    }]
+  });
+
+  assert.deepEqual(ticket.filter(row => row.kind === 'allergens'), [
+    { kind: 'allergens', text: 'ALLERGENI: Glutine, Pesce' }
+  ]);
+});

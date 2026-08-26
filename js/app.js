@@ -16,6 +16,10 @@ import { buildCloseDialog, closeService, nextServiceSequence, serviceAcceptsOrde
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
 import { buildKitchenTicket } from './print/kitchen-ticket.js';
 import { promisedMinutes } from './messages.js';
+import { allergenNames, allergenSentence } from './allergens.js';
+import { announceOrders, arrivedOrders, unlockChime } from './notify.js';
+import { orderSuggestions } from './suggestions.js';
+import { loginProblem } from './login-errors.js';
 import { kitchenPanel } from './views/kitchen.js';
 import { appConfig } from './config.js';
 import { bootstrapDataLayer, isCreatorSession } from './bootstrap.js';
@@ -26,16 +30,28 @@ const defaults={view:'customer',creator:false,locale:'it',receipt:null,shift:nul
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
  {id:'cola',type:'drink',name:'Cola',price:3,emoji:'🥤',ingredients:[],available:true}],orders:[]};
-let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let confirming=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorQuantities={}; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false;
+let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let confirming=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorQuantities={}; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null;
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
-const stateRefresh=createRepositoryRefreshCoordinator({repository,apply(snapshot){state=applyRepositorySnapshot(state,snapshot);save();if(hasRendered)render()},onError:reportRepositoryError});
+const stateRefresh=createRepositoryRefreshCoordinator({repository,apply(snapshot){
+  // Chi sta in cassa non guarda lo schermo tutto il tempo: se un ordine entra
+  // in silenzio lo si scopre col cliente sulla porta.
+  const arrivati=state.creator?arrivedOrders(ordersSeen,snapshot.orders??[]):[];
+  ordersSeen=(snapshot.orders??[]).map(o=>({id:o.id,sequence:o.sequence,status:o.status}));
+  state=applyRepositorySnapshot(state,snapshot);save();
+  if(hasRendered)render();
+  const avviso=announceOrders(arrivati);
+  if(avviso)toast(avviso);
+},onError:reportRepositoryError});
 async function refreshRepositoryState(){try{await stateRefresh.refresh()}catch{}}
 function t(key){return translate(key,state.locale)}
 function pname(product){return translateProduct(product.names??{it:product.name},state.locale)||product.name||''}
 // La descrizione non ha ripiego: in inglese o c'e' in inglese o non si mostra.
 // Una frase italiana sotto la bandiera inglese e' un errore che si vede.
+// Gli allergeni si dicono sempre e nello stesso modo, dal menu alla comanda.
+function pallergens(entry){return allergenNames(entry.allergenLabels??entry.allergens??[],state.locale)}
+function pallergenLine(entry){return allergenSentence(pallergens(entry),state.locale)}
 function pdesc(product){const d=product.descriptions??{};return state.locale==='it'?(d.it??''):(d.en??'')}
 function localIngredient(name,translations){const match=(translations||[]).find(entry=>entry.it===name);return match?translateProduct(match,state.locale):name}
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(v)}
@@ -98,6 +114,7 @@ function products(type){
         <h2>${esc(pname(p))}</h2>
         ${ingredients?`<p class="dish-ingredients">${esc(ingredients)}</p>`:''}
         ${description?`<p class="dish-desc">${esc(description)}</p>`:''}
+        <p class="dish-allergens${pallergens(p).length?'':' none'}">${esc(pallergenLine(p))}</p>
         <div class="dish-foot">
           <span class="price">${money(p.price)}</span>
           <button class="btn primary add" data-id="${esc(p.id)}" ${closed?'disabled':''}>${closed?t('product.closed'):t('product.customize')}</button>
@@ -108,18 +125,22 @@ function products(type){
 }
 
 function confirmPanel(){
+  return `<div class="modal-backdrop"><section class="modal confirm" id="confirm-modal" role="dialog" aria-modal="true" aria-label="${t('confirm.title')}">${confirmBody()}</section></div>`;
+}
+function confirmBody(){
   const total=state.cart.reduce((n,i)=>n+i.price,0);
   const eta=waitMinutes(countPizzas(state.cart.map(i=>({...i,quantity:1}))));
   const metodo=DEMO_PAYMENT_METHODS.find(m=>m.id===confirming.paymentId);
-  return `<div class="modal-backdrop"><section class="modal confirm" role="dialog" aria-modal="true" aria-label="${t('confirm.title')}">
-    <div class="modal-head"><div><span class="eyebrow">${t('confirm.title')}</span><h2>${t('confirm.when')} ${eta} ${t('status.minutes')}</h2></div></div>
+  const proposte=orderSuggestions(state.cart,state.menu);
+  return `<div class="modal-head"><div><span class="eyebrow">${t('confirm.title')}</span><h2>${t('confirm.when')} ${eta} ${t('status.minutes')}</h2></div></div>
     <p class="confirm-sub">${t('confirm.sub')}</p>
-    <ul class="confirm-list">${state.cart.map(i=>{
+    <ul class="confirm-list">${state.cart.map((i,x)=>{
       const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',
         i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',
         i.note||''].filter(Boolean);
-      return `<li><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}</div><span>${money(i.price)}</span></li>`;
+      return `<li><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}<p class="cart-allergens">${esc(pallergenLine(i))}</p></div><div class="confirm-side"><span>${money(i.price)}</span><button class="btn secondary confirm-remove" data-remove-confirm="${x}" aria-label="${t('cart.remove')}">\u00d7</button></div></li>`;
     }).join('')}</ul>
+    ${proposte.length?`<div class="upsell"><span class="upsell-title">${t('confirm.add')}</span><div class="upsell-row">${proposte.map(p=>`<button class="upsell-card" data-suggest="${esc(p.id)}">${p.imageUrl?`<img src="${esc(p.imageUrl)}" alt="" loading="lazy" decoding="async">`:'<span class="upsell-empty"></span>'}<b>${esc(pname(p))}</b><span>+ ${money(p.price)}</span></button>`).join('')}</div></div>`:''}
     <p class="confirm-total"><span>${t('cart.total')}</span><b>${money(total)}</b></p>
     <dl class="confirm-facts">
       <div><dt>${t('cart.payment')}</dt><dd>${esc(translatePaymentMethod(metodo.id,state.locale))}</dd></div>
@@ -129,13 +150,12 @@ function confirmPanel(){
     <div class="confirm-actions">
       <button class="btn secondary" id="confirm-back">${t('confirm.back')}</button>
       <button class="btn primary" id="confirm-send">${t('confirm.send')}</button>
-    </div>
-  </section></div>`;
+    </div>`;
 }
-function cart(){const total=state.cart.reduce((n,i)=>n+i.price,0),closed=currentClosure().closed;return `<div class="cart-head"><h2>${t('cart.title')}</h2><button class="btn secondary" id="cart-close">${t('cart.close')}</button></div>${state.cart.map((i,x)=>{const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',i.note||''].filter(Boolean);return `<div class="cart-line"><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}</div><div class="cart-line-side"><span>${money(i.price)}</span><button class="btn secondary" data-remove="${x}">${t('cart.remove')}</button></div></div>`}).join('')||`<p>${t('cart.empty')}</p>`}<h3 class="cart-total">${t('cart.total')} ${money(total)}</h3>${state.cart.length?`<div class="field"><label>${t('cart.name')}<input id="name"></label></div><div class="field"><label>${t('cart.phone')}<input id="phone" inputmode="tel"></label></div><div class="field"><label>${t('cart.email')}<input id="email" type="email" inputmode="email"></label></div><div class="field"><span>${t('cart.payment')}</span><div class="payment-grid">${DEMO_PAYMENT_METHODS.map((method,index)=>`<label class="payment-option"><input type="radio" name="payment" value="${method.id}" ${index===0?'checked':''}> <b>${translatePaymentMethod(method.id,state.locale)}</b></label>`).join('')}</div></div><button class="btn primary" id="checkout" ${closed?'disabled':''}>${closed?t('product.closed'):t('cart.confirm')}</button>`:''}`}
+function cart(){const total=state.cart.reduce((n,i)=>n+i.price,0),closed=currentClosure().closed;return `<div class="cart-head"><h2>${t('cart.title')}</h2><button class="btn secondary" id="cart-close">${t('cart.close')}</button></div>${state.cart.map((i,x)=>{const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',i.note||''].filter(Boolean);return `<div class="cart-line"><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}<p class="cart-allergens">${esc(pallergenLine(i))}</p></div><div class="cart-line-side"><span>${money(i.price)}</span><button class="btn secondary" data-remove="${x}">${t('cart.remove')}</button></div></div>`}).join('')||`<p>${t('cart.empty')}</p>`}<h3 class="cart-total">${t('cart.total')} ${money(total)}</h3>${state.cart.length?`<div class="field"><label>${t('cart.name')}<input id="name"></label></div><div class="field"><label>${t('cart.phone')}<input id="phone" inputmode="tel"></label></div><div class="field"><label>${t('cart.email')}<input id="email" type="email" inputmode="email"></label></div><div class="field"><span>${t('cart.payment')}</span><div class="payment-grid">${DEMO_PAYMENT_METHODS.map((method,index)=>`<label class="payment-option"><input type="radio" name="payment" value="${method.id}" ${index===0?'checked':''}> <b>${translatePaymentMethod(method.id,state.locale)}</b></label>`).join('')}</div></div><button class="btn primary" id="checkout" ${closed?'disabled':''}>${closed?t('product.closed'):t('cart.confirm')}</button>`:''}`}
 
 
-function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}" data-row="ing-${index}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.map((addition,index)=>`<div class="option-row${addition.quantity?' picked':''}" data-row="add-${index}"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}" ${addition.quantity?'':'disabled'}>\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}<div class="allergens"><b>${t('custom.allergens')}: ${(p.allergenLabels||[]).map(label=>translateProduct(label,state.locale)).join(', ')||(p.allergens||[]).join(', ')||t('custom.none')}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
+function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}" data-row="ing-${index}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.map((addition,index)=>`<div class="option-row${addition.quantity?' picked':''}" data-row="add-${index}"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}" ${addition.quantity?'':'disabled'}>\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}<div class="allergens"><b>${esc(pallergenLine(p))}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
 
 // Cucina e Creator sono la stessa area riservata: le comande contengono nome e
 // telefono di chi ordina, non stanno dietro un semplice cambio di scheda.
@@ -265,8 +285,29 @@ function bind(){
     };
     render();
   });
-  document.querySelector('#confirm-back')?.addEventListener('click',()=>{confirming=null;render()});
-  document.querySelector('#confirm-send')?.addEventListener('click',async()=>{
+  function refreshConfirm(){
+    const finestra=document.querySelector('#confirm-modal');
+    if(!finestra)return render();
+    finestra.innerHTML=confirmBody();
+    bindConfirm();
+  }
+  function bindConfirm(){
+    document.querySelector('#confirm-back')?.addEventListener('click',()=>{confirming=null;render()});
+    document.querySelector('#confirm-send')?.addEventListener('click',sendOrder);
+    document.querySelectorAll('[data-suggest]').forEach(b=>b.onclick=()=>{
+      const product=state.menu.find(x=>x.id===b.dataset.suggest);
+      if(!product)return;
+      state.cart.push({...product,price:product.price,removed:[],additions:(product.additions||[]).map(a=>({...a,quantity:0})),note:''});
+      save();haptic();refreshConfirm();
+    });
+    document.querySelectorAll('[data-remove-confirm]').forEach(b=>b.onclick=()=>{
+      state.cart.splice(Number(b.dataset.removeConfirm),1);save();haptic();
+      if(!state.cart.length){confirming=null;return render()}
+      refreshConfirm();
+    });
+  }
+  bindConfirm();
+  async function sendOrder(){
     const dati=confirming;
     if(!dati)return;
     const payment=DEMO_PAYMENT_METHODS.find(method=>method.id===dati.paymentId);
@@ -288,8 +329,8 @@ function bind(){
       await stateRefresh.refresh();
       render();toast('Ordine inviato in cucina.');
     }catch{reportRepositoryError()}
-  });
-  document.querySelector('#login')?.addEventListener('click',async()=>{try{const session=await runtime.auth.signIn(document.querySelector('#user').value,document.querySelector('#pass').value);state.creator=isCreatorSession(session);await refreshRepositoryState()}catch{toast('Credenziali non corrette')}});
+  }
+  document.querySelector('#login')?.addEventListener('click',async()=>{try{const session=await runtime.auth.signIn(document.querySelector('#user').value,document.querySelector('#pass').value);state.creator=isCreatorSession(session);await refreshRepositoryState()}catch(error){toast(loginProblem(error))}});
   document.querySelectorAll('.admin-nav').forEach(b=>b.onclick=()=>{adminSection=b.dataset.section;render()});
   document.querySelectorAll('.service-action').forEach(b=>b.onclick=async()=>{
     const shift=b.dataset.shift,action=b.dataset.serviceAction,existing=state.services[shift];
@@ -534,6 +575,9 @@ function bind(){
   if(dialog)releaseDialogTrap=trapDialogFocus(dialog,finishDialog);
 }
 try{await stateRefresh.refresh()}catch{}
+// Un browser non suona finche' la pagina non e' stata toccata: al primo tocco
+// si prepara il trillo, cosi' e' pronto quando serve.
+document.addEventListener('pointerdown',()=>unlockChime(),{once:true});
 render();hasRendered=true;setInterval(()=>{if(state.view==='kitchen')render()},1000);
 repository.subscribe(()=>{void stateRefresh.schedule()});
 runtime.auth.onChange(session=>{state.creator=isCreatorSession(session);void stateRefresh.schedule()});

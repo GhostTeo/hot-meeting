@@ -306,7 +306,21 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .price { font-family: var(--serif); font-size: 24px; font-weight: 700 }
 .dish-foot .btn { padding: 11px 16px }
 
-.dish-allergens { font-size: 12px; color: var(--ink-soft); margin: 0 }
+/* Gli allergeni si dicono sempre, anche quando non ce ne sono: il silenzio non
+   e' un'informazione, e chi ha un'allergia deve poterlo leggere sulla scheda
+   senza aprire niente. */
+.dish-allergens {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #8a5a1e;
+  background: #fdf3e0;
+  border-radius: 8px;
+  padding: 6px 9px;
+}
+
+.dish-allergens.none { color: var(--ink-soft); background: var(--paper-warm) }
+.cart-allergens { margin: 5px 0 0 !important; font-size: 12px; color: #8a5a1e }
 
 /* ---------- Barra carrello ---------- */
 
@@ -550,6 +564,55 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .confirm-list b { font-size: 16px }
 .confirm-list p { margin: 3px 0 0; font-size: 13px; color: var(--ink-soft) }
 .confirm-list span { font-weight: 700; white-space: nowrap }
+
+/* Da bere per primo: e' quello che manca davvero a chi ha ordinato una pizza. */
+.upsell { margin: 18px 0 4px }
+
+.upsell-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+
+.upsell-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none }
+.upsell-row::-webkit-scrollbar { display: none }
+
+.upsell-card {
+  flex: 0 0 108px;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper-card);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, transform .12s ease;
+}
+
+.upsell-card:active { transform: scale(.97) }
+.upsell-card:hover { border-color: var(--accent) }
+.upsell-card img, .upsell-empty { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; background: var(--paper-warm) }
+.upsell-card b { font-size: 13.5px; line-height: 1.25 }
+.upsell-card span { font-size: 12.5px; color: var(--accent); font-weight: 700 }
+
+.confirm-side { display: flex; align-items: center; gap: 8px; white-space: nowrap }
+.confirm-side span { font-weight: 700 }
+
+.confirm-remove {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--ink-soft);
+}
 
 .confirm-total {
   display: flex;

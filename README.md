@@ -148,6 +148,29 @@ scrivibile solo dal Creator. La foto segue una strada sua, separata dal resto
 del prodotto: si aggiunge o si toglie senza toccare prezzo e ingredienti. Un
 piatto senza foto compare con un riquadro decorato, mai con un'immagine rotta.
 
+## Allergeni
+
+Sono l'unica parte del menu che, sbagliata, manda qualcuno in ospedale, quindi
+si vedono ovunque senza dover aprire niente: sulla scheda del piatto, nel
+carrello, nella finestra di personalizzazione, nel riepilogo prima di
+confermare, sulla ricevuta e sulla comanda in cucina.
+
+Al cliente si mostra l'etichetta di legge per intero («Cereali contenenti
+glutine»); in cucina la parola che si usa impastando («Glutine»), perche' li'
+conta il colpo d'occhio. Un piatto senza allergeni lo dichiara lo stesso: il
+silenzio non e' un'informazione.
+
+Li dichiara il locale prodotto per prodotto: il programma non li deduce dagli
+ingredienti.
+
+## Avviso di un ordine nuovo
+
+Quando entra un ordine, chi e' nel pannello Creator sente un trillo breve e il
+telefono vibra. Il suono lo genera il browser, non e' un file da scaricare. I
+browser non lasciano suonare una pagina finche' non e' stata toccata almeno una
+volta: in cassa si tocca comunque, e prima di allora nessun ordine puo' essere
+arrivato.
+
 ## Lingua e recap cliente
 
 Il cliente sceglie fra italiano e inglese. L'italiano e' la lingua sorgente: se
@@ -167,8 +190,11 @@ senza mostrare un numero inventato: va compilato prima di aprire al pubblico.
 ## Ordini e conferma
 
 Prima di mandare in cucina il cliente vede un riepilogo: cosa ha ordinato con le
-modifiche, il totale, il pagamento, il nome, il numero e fra quanto sara' pronto.
-Una pizza sbagliata scoperta li' costa un tocco, scoperta dopo costa una pizza.
+modifiche, gli allergeni, il totale, il pagamento, il nome, il numero e fra
+quanto sara' pronto. Una pizza sbagliata scoperta li' costa un tocco, scoperta
+dopo costa una pizza. Da li' si toglie una riga o si aggiunge quello che manca:
+da bere per primo, perche' e' quello che manca davvero a chi ha ordinato una
+pizza.
 
 Nel pannello Creator la sezione Ordini tiene **solo quelli ancora da fare**:
 segnato pronto, l'ordine sparisce dalla lista e resta nello Storico. Toccando un

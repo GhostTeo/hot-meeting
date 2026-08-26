@@ -13,7 +13,10 @@
 //   item       il piatto, con quantita'
 //   change     una modifica del piatto (senza / aggiunta)
 //   note       una richiesta scritta dal cliente; alert:true se parla di allergie
+//   allergens  gli allergeni dichiarati per quel piatto
 //   footer     come si paga
+
+import { allergenShortNames } from '../allergens.js';
 
 const ALLERGY = /allerg|celiac|intoller|lattosio|glutine|noci|arachidi|crostacei/i;
 
@@ -51,6 +54,11 @@ export function buildKitchenTicket(order = {}) {
     const nota = String(item.note ?? '').trim();
     // In cucina una nota sulle allergie non e' una preferenza: va vista subito.
     if (nota) rows.push({ kind: 'note', text: nota, alert: ALLERGY.test(nota) });
+
+    // Anche sulla carta: chi impasta deve sapere cosa contiene quel piatto,
+    // non solo cosa ha scritto il cliente.
+    const allergeni = allergenShortNames(item.allergens ?? []);
+    if (allergeni.length) rows.push({ kind: 'allergens', text: `ALLERGENI: ${allergeni.join(', ')}` });
   }
 
   rows.push({ kind: 'separator', text: '' });

@@ -9,6 +9,7 @@
 // dati al cliente, non una stima rifatta ogni volta che si guarda lo schermo.
 
 import { promisedMinutes } from '../messages.js';
+import { allergenShortNames } from '../allergens.js';
 
 function decorate(order, now) {
   const minutesLeft = order.readyAt ? Math.round((Number(order.readyAt) - now) / 60000) : null;
@@ -41,23 +42,6 @@ function clock(value) {
 
 const ALLERGY = /allerg|celiac|intoller|glutine|lattosio|noci|arachidi|crostacei/i;
 
-// «Cereali contenenti glutine» e' la formula di legge, giusta sul menu. Sul
-// banco serve la parola che si usa impastando.
-const ALLERGENE_BREVE = {
-  'cereali contenenti glutine': 'Glutine',
-  'anidride solforosa e solfiti': 'Solfiti',
-  'frutta a guscio': 'Frutta a guscio',
-  'semi di sesamo': 'Sesamo'
-};
-
-// L'allergene arriva come oggetto dal database (etichetta nelle due lingue) o
-// come semplice testo dai dati locali: la comanda deve leggersi in entrambi i
-// casi, non stampare «[object Object]» sul banco.
-function shortAllergen(allergen) {
-  const label = typeof allergen === 'string' ? allergen : (allergen?.label_it ?? allergen?.it ?? '');
-  return ALLERGENE_BREVE[String(label).toLowerCase()] ?? label;
-}
-
 // Le righe sotto il nome del piatto, nell'ordine in cui servono al pizzaiolo:
 // prima cosa NON deve mettere, poi cosa aggiungere, poi la richiesta scritta,
 // infine gli allergeni dichiarati.
@@ -74,7 +58,7 @@ export function ticketLines(item = {}) {
   const note = String(item.note ?? '').trim();
   if (note) lines.push({ kind: 'note', text: note, alert: ALLERGY.test(note) });
 
-  const allergens = (item.allergens ?? []).map(shortAllergen).filter(Boolean);
+  const allergens = allergenShortNames(item.allergens ?? []);
   if (allergens.length) lines.push({ kind: 'allergens', text: allergens.join(', ') });
 
   return lines;
