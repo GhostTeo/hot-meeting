@@ -1,8 +1,8 @@
 // Il banco della cucina.
 //
-// Chi impasta guarda questo schermo con le mani sporche di farina: deve capire
-// in un secondo quale ordine e', chi lo aspetta, cosa contiene e quanto manca.
-// Niente altro.
+// Chi impasta ha le mani nella farina e non tocca niente: questo schermo si
+// guarda e basta, non ha nemmeno un bottone. Le comande entrano quando arriva
+// l'ordine ed escono quando il cameriere lo chiude dalla sezione Ordini.
 //
 // Si lavora per scadenza, non per ordine di arrivo: davanti va quello che deve
 // uscire prima. Il ritardo si vede da lontano, e i minuti promessi sono quelli
@@ -87,33 +87,25 @@ function itemLine(item) {
   </li>`;
 }
 
-// In preparazione conta quanto manca. Sul banco dei pronti no: la pizza e' gia'
-// fatta, un ritardo enorme in rosso direbbe soltanto che il cliente tarda a
-// passare. Li' serve sapere da quanto sta aspettando.
-function counter(order, waiting) {
+function counter(order) {
   if (order.minutesLeft == null) return '<span class="kt-left">—</span>';
-  if (waiting) {
-    const attesa = Math.max(0, -order.minutesLeft);
-    return `<span class="kt-left waiting">${attesa === 0 ? 'ora' : `da ${attesa} min`}</span>`;
-  }
   return order.late
     ? `<span class="kt-left late">+${Math.abs(order.minutesLeft)} min</span>`
     : `<span class="kt-left">${order.minutesLeft} min</span>`;
 }
 
-function ticket(order, actions, waiting = false) {
-  return `<article class="kt ${order.late && !waiting ? 'late' : ''} ${waiting ? 'done' : ''}">
+function ticket(order) {
+  return `<article class="kt ${order.late ? 'late' : ''}">
     <header class="kt-head">
       <span class="kt-number">#${String(order.sequence ?? 0).padStart(2, '0')}</span>
       <div class="kt-times">
         <span>ordinato ${clock(order.createdAt)}</span>
-        <span>${waiting ? `promessi ${order.promised ?? '—'} min` : `promessi ${order.promised ?? '—'} min · esce ${clock(order.readyAt)}`}</span>
+        <span>promessi ${order.promised ?? '—'} min · esce ${clock(order.readyAt)}</span>
       </div>
-      ${counter(order, waiting)}
+      ${counter(order)}
     </header>
     <p class="kt-who">${escapeHtml(order.customer ?? 'Cliente')}${order.source ? ` · ${escapeHtml(String(order.source).toLowerCase() === 'web' ? 'dal sito' : 'in pizzeria')}` : ''}</p>
     <ul class="kt-items">${(order.items ?? []).map(itemLine).join('')}</ul>
-    <div class="kt-actions">${actions}</div>
   </article>`;
 }
 
@@ -122,16 +114,10 @@ export function kitchenPanel(orders = [], now = Date.now()) {
   const inRitardo = board.preparing.filter(order => order.late).length;
   return `<div class="kt-top">
       <h1>Cucina</h1>
-      <p>${board.preparing.length} da preparare${inRitardo ? ` · <b class="warning">${inRitardo} in ritardo</b>` : ''}${board.ready.length ? ` · ${board.ready.length} da ritirare` : ''}</p>
+      <p>${board.preparing.length} da preparare${inRitardo ? ` · <b class="warning">${inRitardo} in ritardo</b>` : ''}</p>
     </div>
     ${board.preparing.length
-      ? `<div class="kt-grid">${board.preparing.map(order => ticket(order, `
-          <button class="btn primary ready" data-id="${escapeHtml(order.id)}">Pronto</button>
-          <button class="btn secondary ticket" data-id="${escapeHtml(order.id)}">Stampa</button>`)).join('')}</div>`
-      : '<div class="card"><h2>Forno libero</h2><p>Nessuna comanda da preparare.</p></div>'}
-    ${board.ready.length
-      ? `<h2 class="kt-section">Pronti, da consegnare</h2>
-         <div class="kt-grid">${board.ready.map(order => ticket(order, `
-           <button class="btn primary collected" data-id="${escapeHtml(order.id)}">Consegnato</button>`, true)).join('')}</div>`
-      : ''}`;
+      ? `<div class="kt-grid">${board.preparing.map(ticket).join('')}</div>
+         <p class="kt-foot">Le comande si tolgono da sole quando il cameriere chiude l'ordine.</p>`
+      : '<div class="card"><h2>Forno libero</h2><p>Nessuna comanda da preparare.</p></div>'}`;
 }

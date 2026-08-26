@@ -34,4 +34,5 @@ test('la scheda mostra numero, cliente, contatti, righe e totale', () => {
   assert.ok(html.includes('SENZA Basilico'));
   assert.ok(html.includes('21 EUR'));
   assert.ok(html.includes('detail-edit'));
+  assert.ok(html.includes('order-close'));
 });

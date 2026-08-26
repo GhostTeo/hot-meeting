@@ -47,11 +47,11 @@ function riga(item) {
 export function orderDetailPanel(order = {}, money = value => `${value}`) {
   const { tel, mail } = contactLinks(order);
   const minuti = promisedMinutes(order);
-  const azioni = order.status === 'preparing'
-    ? `<button class="btn primary ready" data-id="${escapeHtml(order.id)}">Segna pronto</button>`
-    : order.status === 'ready'
-      ? `<button class="btn primary collected" data-id="${escapeHtml(order.id)}">Segna consegnato</button>`
-      : '';
+  const aperto = ['received', 'preparing', 'ready'].includes(order.status);
+  const azioni = aperto
+    ? `<button class="btn primary order-close" data-id="${escapeHtml(order.id)}">Consegnato</button>
+       ${order.status === 'ready' ? '' : `<button class="btn secondary ready" data-id="${escapeHtml(order.id)}">Pronto, aspetta il cliente</button>`}`
+    : '';
   return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="Dettaglio ordine">
     <div class="modal-head">
       <div>

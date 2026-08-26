@@ -11,6 +11,7 @@ import { buildCustomerRecap, orderReceiptPanel } from './views/order-receipt.js'
 import { draftFromProduct, emptyDraft, menuPanel, menuProductPayload } from './views/menu-editor.js';
 import { counterOrderIssues, counterOrderPanel, counterOrderPayload } from './views/counter-order.js';
 import { orderDetailPanel } from './views/order-detail.js';
+import { closingSteps, workingOrders } from './views/order-flow.js';
 import { buildCloseDialog, closeService, nextServiceSequence, serviceAcceptsOrders, servicePanel, shiftLabel, startServiceWithCalendar } from './views/service.js';
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
 import { buildKitchenTicket } from './print/kitchen-ticket.js';
@@ -140,9 +141,11 @@ function editingOrder(){return editingOrderId?state.orders.find(o=>String(o.id)=
 function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders'){
   // Qui stanno solo gli ordini ancora da fare: cliccato «Pronto» l'ordine
   // sparisce da questa lista e resta nello Storico, dove si ritrova sempre.
-  const daFare=(state.orders||[]).filter(o=>['received','preparing'].includes(o.status));
+  // Aperti = da preparare e gia' pronti in attesa del cliente. Consegnato li
+  // chiude e li toglie da qui e dalla cucina; restano nello Storico.
+  const daFare=workingOrders(state.orders||[]);
   const attesa=waitMinutes(1);
-  return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dalla pizzeria</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div><p class="history-count">${pizzasAhead()} pizze in coda · un ordine di una pizza esce fra ${attesa} minuti</p>${daFare.map(orderCard).join('')||'<div class="card"><h2>Nessun ordine da fare</h2><p>Quelli conclusi sono nello Storico.</p></div>'}${counterDraft?counterOrderPanel(counterDraft,state.menu,money,DEMO_PAYMENT_METHODS):''}${detailOrder()?orderDetailPanel(detailOrder(),money):''}`;
+  return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dalla pizzeria</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div><p class="history-count">${pizzasAhead()} pizze in coda · un ordine di una pizza esce fra ${attesa} minuti</p>${daFare.map(orderCard).join('')||'<div class="card"><h2>Nessun ordine aperto</h2><p>Quelli consegnati sono nello Storico.</p></div>'}${counterDraft?counterOrderPanel(counterDraft,state.menu,money,DEMO_PAYMENT_METHODS):''}${detailOrder()?orderDetailPanel(detailOrder(),money):''}`;
 }
 if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||[],money,typeof repository.uploadProductPhoto==='function');const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();return `<h1>Report</h1><p class="history-count">Giornata ${day||'non ancora aperta'}</p><div class="grid">${reportCard('Pranzo',dailyReport(rows,day,'lunch'))}${reportCard('Serale',dailyReport(rows,day,'dinner'))}${reportCard('Giornata',dailyReport(rows,day))}</div>`}
 function reportCard(label,r){return `<article class="card"><span class="eyebrow">${label}</span><div class="metric">${money(r.net)}</div><p>${r.orders} ordini · ${r.pizzas} pizze</p><small>Lordo ${money(r.gross)} · Trattenute ${money(r.fees)}<br>Supplementi ${money(r.supplements||0)} · Rimborsi ${money(r.refunds||0)}</small></article>`}
@@ -151,16 +154,19 @@ function orderNumber(order){return order.sequence?`#${String(order.sequence).pad
 function orderCard(o){
   const promessi=promisedMinutes(o);
   const pezzi=(o.items||[]).reduce((n,i)=>n+Number(i.quantity??1),0);
-  return `<article class="card order ordercard" data-order="${esc(o.id)}">
+  const pronto=o.status==='ready';
+  return `<article class="card order ordercard${pronto?' is-ready':''}" data-order="${esc(o.id)}">
     <div class="ordercard-head">
       <span class="ordercard-n">#${String(o.sequence??0).padStart(2,'0')}</span>
-      <div><b>${esc(o.customer||'Cliente')}</b><p>${esc(String(o.source||'').toLowerCase()==='web'?'dal sito':'in pizzeria')} · ordinato ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}${promessi==null?'':` · promessi ${promessi} min`}</p></div>
+      <div><b>${esc(o.customer||'Cliente')}</b><p>${pronto?'<b class="ordercard-flag">Pronto, da consegnare</b> · ':''}${esc(String(o.source||'').toLowerCase()==='web'?'dal sito':'in pizzeria')} · ordinato ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}${promessi==null?'':` · promessi ${promessi} min`}</p></div>
       <span class="ordercard-tot">${money(Number(o.total??0))}</span>
     </div>
     <p class="ordercard-items">${esc((o.items||[]).map(i=>`${i.quantity??1}× ${i.name}`).join(' · '))} · ${pezzi} pezzi</p>
     <div class="actions">
-      <button class="btn primary ready" data-id="${esc(o.id)}">Pronto</button>
+      <button class="btn primary order-close" data-id="${esc(o.id)}">Consegnato</button>
+      ${pronto?'':`<button class="btn secondary ready" data-id="${esc(o.id)}">Pronto</button>`}
       <button class="btn secondary order-open" data-order="${esc(o.id)}">Dettagli</button>
+      <button class="btn secondary ticket" data-id="${esc(o.id)}">Stampa</button>
     </div>
   </article>`;
 }
@@ -452,6 +458,20 @@ function bind(){
   }
   document.querySelectorAll('.ready').forEach(b=>b.onclick=avanza(b.dataset.id,'ready','Segnato pronto.'));
   document.querySelectorAll('.collected').forEach(b=>b.onclick=avanza(b.dataset.id,'collected','Ordine consegnato.'));
+  // Chiudere un ordine ancora in preparazione richiede i due passaggi che il
+  // database conosce: cosi' resta scritto che e' passato da pronto.
+  document.querySelectorAll('.order-close').forEach(b=>b.onclick=async()=>{
+    const ordine=(state.orders||[]).find(o=>String(o.id)===String(b.dataset.id));
+    const passi=closingSteps(ordine||{});
+    if(!passi.length)return;
+    try{
+      for(const passo of passi)await repository.updateOrderStatus(b.dataset.id,passo);
+      detailOrderId=null;
+      if(runtime.mode==='supabase')await refreshRepositoryState();
+      else{if(ordine)ordine.status='collected';save();render()}
+      toast('Ordine consegnato.');
+    }catch{reportRepositoryError()}
+  });
   const dialog=document.querySelector('.dialog-card');
   if(dialog)releaseDialogTrap=trapDialogFocus(dialog,finishDialog);
 }

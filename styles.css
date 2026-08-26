@@ -575,8 +575,12 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .ordercard-n { font-family: var(--serif); font-size: 28px; font-weight: 700 }
 .ordercard-tot { font-weight: 700; white-space: nowrap }
 .ordercard-items { margin: 10px 0 0; font-size: 14px }
-.ordercard .actions { margin: 14px 0 0 }
-.ordercard .actions .btn { flex: 1 }
+.ordercard .actions { margin: 14px 0 0; gap: 8px }
+.ordercard .actions .btn { flex: 1 1 auto; min-width: 96px }
+.ordercard .actions .btn.primary { flex: 2 1 140px }
+.ordercard.is-ready { border-left-color: var(--gold) }
+.ordercard-flag { color: #9a6b13 }
+.kt-foot { margin: 22px 0 0; font-size: 13px; color: var(--ink-soft); text-align: center }
 
 /* ---------- Scheda di un ordine ---------- */
 
