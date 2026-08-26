@@ -10,10 +10,11 @@ import { LOCALES, translate, translatePaymentMethod, translateProduct } from './
 import { buildCustomerRecap, orderReceiptPanel } from './views/order-receipt.js';
 import { draftFromProduct, emptyDraft, menuPanel, menuProductPayload } from './views/menu-editor.js';
 import { counterOrderIssues, counterOrderPanel, counterOrderPayload } from './views/counter-order.js';
+import { orderDetailPanel } from './views/order-detail.js';
 import { buildCloseDialog, closeService, nextServiceSequence, serviceAcceptsOrders, servicePanel, shiftLabel, startServiceWithCalendar } from './views/service.js';
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
 import { buildKitchenTicket } from './print/kitchen-ticket.js';
-import { promisedMinutes, smsLink, waitMessage, whatsappLink } from './messages.js';
+import { promisedMinutes } from './messages.js';
 import { kitchenPanel } from './views/kitchen.js';
 import { appConfig } from './config.js';
 import { bootstrapDataLayer, isCreatorSession } from './bootstrap.js';
@@ -24,7 +25,7 @@ const defaults={view:'customer',creator:false,locale:'it',receipt:null,shift:nul
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
  {id:'cola',type:'drink',name:'Cola',price:3,emoji:'🥤',ingredients:[],available:true}],orders:[]};
-let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let historyFilters={}; let editingOrderId=null; let editorQuantities={}; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false;
+let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let confirming=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorQuantities={}; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false;
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
@@ -63,7 +64,8 @@ function customer(){
     <section class="grid dish-grid" id="products">${products(productFilter)}</section>
     ${state.cart.length?`<div class="cart-bar"><span>${state.cart.length} \u00b7 <strong>${money(total)}</strong></span><button class="btn primary" id="cart-open">${t('tabs.cart')}</button></div>`:''}
     <aside id="cart" class="drawer hidden">${cart()}</aside>
-    ${customizing?customizer():''}`;
+    ${customizing?customizer():''}
+    ${confirming?confirmPanel():''}`;
 }
 
 // La foto e' il primo argomento di vendita: quando manca si mostra comunque un
@@ -98,6 +100,31 @@ function products(type){
   }).join('');
 }
 
+function confirmPanel(){
+  const total=state.cart.reduce((n,i)=>n+i.price,0);
+  const eta=waitMinutes(countPizzas(state.cart.map(i=>({...i,quantity:1}))));
+  const metodo=DEMO_PAYMENT_METHODS.find(m=>m.id===confirming.paymentId);
+  return `<div class="modal-backdrop"><section class="modal confirm" role="dialog" aria-modal="true" aria-label="${t('confirm.title')}">
+    <div class="modal-head"><div><span class="eyebrow">${t('confirm.title')}</span><h2>${t('confirm.when')} ${eta} ${t('status.minutes')}</h2></div></div>
+    <p class="confirm-sub">${t('confirm.sub')}</p>
+    <ul class="confirm-list">${state.cart.map(i=>{
+      const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',
+        i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',
+        i.note||''].filter(Boolean);
+      return `<li><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}</div><span>${money(i.price)}</span></li>`;
+    }).join('')}</ul>
+    <p class="confirm-total"><span>${t('cart.total')}</span><b>${money(total)}</b></p>
+    <dl class="confirm-facts">
+      <div><dt>${t('cart.payment')}</dt><dd>${esc(translatePaymentMethod(metodo.id,state.locale))}</dd></div>
+      ${confirming.name?`<div><dt>${t('confirm.who')}</dt><dd>${esc(confirming.name)}</dd></div>`:''}
+      <div><dt>${t('confirm.phone')}</dt><dd>${esc(confirming.phone)}</dd></div>
+    </dl>
+    <div class="confirm-actions">
+      <button class="btn secondary" id="confirm-back">${t('confirm.back')}</button>
+      <button class="btn primary" id="confirm-send">${t('confirm.send')}</button>
+    </div>
+  </section></div>`;
+}
 function cart(){const total=state.cart.reduce((n,i)=>n+i.price,0),closed=currentClosure().closed;return `<div class="cart-head"><h2>${t('cart.title')}</h2><button class="btn secondary" id="cart-close">${t('cart.close')}</button></div>${state.cart.map((i,x)=>{const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',i.note||''].filter(Boolean);return `<div class="cart-line"><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}</div><div class="cart-line-side"><span>${money(i.price)}</span><button class="btn secondary" data-remove="${x}">${t('cart.remove')}</button></div></div>`}).join('')||`<p>${t('cart.empty')}</p>`}<h3 class="cart-total">${t('cart.total')} ${money(total)}</h3>${state.cart.length?`<div class="field"><label>${t('cart.name')}<input id="name"></label></div><div class="field"><label>${t('cart.phone')}<input id="phone" inputmode="tel"></label></div><div class="field"><label>${t('cart.email')}<input id="email" type="email" inputmode="email"></label></div><div class="field"><span>${t('cart.payment')}</span><div class="payment-grid">${DEMO_PAYMENT_METHODS.map((method,index)=>`<label class="payment-option"><input type="radio" name="payment" value="${method.id}" ${index===0?'checked':''}> <b>${translatePaymentMethod(method.id,state.locale)}</b></label>`).join('')}</div></div><button class="btn primary" id="checkout" ${closed?'disabled':''}>${closed?t('product.closed'):t('cart.confirm')}</button>`:''}`}
 
 
@@ -108,20 +135,36 @@ function customizer(){const p=customizing.product,price=calculateCustomizedPrice
 function loginPanel(titolo,sottotitolo){return `<div class="card login-card"><span class="eyebrow">Area riservata</span><h1>${titolo}</h1><p>${sottotitolo}</p><div class="field"><label>${runtime.mode==='supabase'?'Email':'Username'}<input id="user" ${runtime.mode==='supabase'?'type="email" autocomplete="username"':''}></label></div><div class="field"><label>Password<input id="pass" type="password" autocomplete="current-password"></label></div><button class="btn primary" id="login">Accedi</button></div>`}
 function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');return `${editingOrder()?orderEditorPanel(editingOrder(),editorQuantities,money):''}<div class="admin"><aside class="sidebar">${['service','calendar','orders','history','menu','report'].map(s=>`<button class="btn ${adminSection===s?'primary':'secondary'} admin-nav" data-section="${s}">${({service:'Servizio',calendar:'Calendario',orders:'Ordini',history:'Storico',menu:'Menu',report:'Report'})[s]}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
 function ordersWithAdjustments(){const movements=state.adjustments||[];return (state.orders||[]).map(order=>({...order,adjustments:movements.filter(movement=>String(movement.orderId)===String(order.id))}))}
+function detailOrder(){return detailOrderId?(state.orders||[]).find(o=>String(o.id)===String(detailOrderId)):null}
 function editingOrder(){return editingOrderId?state.orders.find(o=>String(o.id)===String(editingOrderId)):null}
-function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders'){const attesa=waitMinutes(1);return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dalla pizzeria</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div><p class="history-count">${pizzasAhead()} pizze in coda · un ordine di una pizza esce fra ${attesa} minuti</p>${state.orders.map(orderCard).join('')||'<p>Nessun ordine.</p>'}${counterDraft?counterOrderPanel(counterDraft,state.menu,money,DEMO_PAYMENT_METHODS):''}`}if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||[],money,typeof repository.uploadProductPhoto==='function');const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();return `<h1>Report</h1><p class="history-count">Giornata ${day||'non ancora aperta'}</p><div class="grid">${reportCard('Pranzo',dailyReport(rows,day,'lunch'))}${reportCard('Serale',dailyReport(rows,day,'dinner'))}${reportCard('Giornata',dailyReport(rows,day))}</div>`}
+function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders'){
+  // Qui stanno solo gli ordini ancora da fare: cliccato «Pronto» l'ordine
+  // sparisce da questa lista e resta nello Storico, dove si ritrova sempre.
+  const daFare=(state.orders||[]).filter(o=>['received','preparing'].includes(o.status));
+  const attesa=waitMinutes(1);
+  return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dalla pizzeria</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div><p class="history-count">${pizzasAhead()} pizze in coda · un ordine di una pizza esce fra ${attesa} minuti</p>${daFare.map(orderCard).join('')||'<div class="card"><h2>Nessun ordine da fare</h2><p>Quelli conclusi sono nello Storico.</p></div>'}${counterDraft?counterOrderPanel(counterDraft,state.menu,money,DEMO_PAYMENT_METHODS):''}${detailOrder()?orderDetailPanel(detailOrder(),money):''}`;
+}
+if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||[],money,typeof repository.uploadProductPhoto==='function');const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();return `<h1>Report</h1><p class="history-count">Giornata ${day||'non ancora aperta'}</p><div class="grid">${reportCard('Pranzo',dailyReport(rows,day,'lunch'))}${reportCard('Serale',dailyReport(rows,day,'dinner'))}${reportCard('Giornata',dailyReport(rows,day))}</div>`}
 function reportCard(label,r){return `<article class="card"><span class="eyebrow">${label}</span><div class="metric">${money(r.net)}</div><p>${r.orders} ordini · ${r.pizzas} pizze</p><small>Lordo ${money(r.gross)} · Trattenute ${money(r.fees)}<br>Supplementi ${money(r.supplements||0)} · Rimborsi ${money(r.refunds||0)}</small></article>`}
 function itemDetails(item){const changes=customizationLines(item);return `<p><b>${item.quantity}× ${item.name}</b>${changes.map(line=>`<br>${line}`).join('')}${item.note?`<br><span class="${/allerg|celiac|intoller/i.test(item.note)?'warning':''}">${item.note}</span>`:''}</p>`}
 function orderNumber(order){return order.sequence?`#${String(order.sequence).padStart(2,'0')}`:`#${order.id}`}
-// Un messaggio solo: fra quanto e' pronto. L'invio automatico richiederebbe un
-// operatore SMS a pagamento, qui il bottone apre l'app col testo gia' scritto.
-function notifyRow(order){
-  if(!order.phone)return '<p class="notify-none">Nessun numero: non si puo avvisare.</p>';
-  const testo=waitMessage(order),sms=smsLink(order.phone,testo),wa=whatsappLink(order.phone,testo);
-  if(!sms&&!wa)return '';
-  return `<div class="notify-line"><span>Avvisa dell attesa</span>${sms?`<a class="btn secondary" href="${esc(sms)}">SMS</a>`:''}${wa?`<a class="btn secondary" href="${esc(wa)}" target="_blank" rel="noopener">WhatsApp</a>`:''}</div>`;
+function orderCard(o){
+  const promessi=promisedMinutes(o);
+  const pezzi=(o.items||[]).reduce((n,i)=>n+Number(i.quantity??1),0);
+  return `<article class="card order ordercard" data-order="${esc(o.id)}">
+    <div class="ordercard-head">
+      <span class="ordercard-n">#${String(o.sequence??0).padStart(2,'0')}</span>
+      <div><b>${esc(o.customer||'Cliente')}</b><p>${esc(String(o.source||'').toLowerCase()==='web'?'dal sito':'in pizzeria')} · ordinato ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}${promessi==null?'':` · promessi ${promessi} min`}</p></div>
+      <span class="ordercard-tot">${money(Number(o.total??0))}</span>
+    </div>
+    <p class="ordercard-items">${esc((o.items||[]).map(i=>`${i.quantity??1}× ${i.name}`).join(' · '))} · ${pezzi} pezzi</p>
+    <div class="actions">
+      <button class="btn primary ready" data-id="${esc(o.id)}">Pronto</button>
+      <button class="btn secondary order-open" data-order="${esc(o.id)}">Dettagli</button>
+    </div>
+  </article>`;
 }
-function orderCard(o){return `<article class="card order"><span class="pill">${orderNumber(o)} · ${o.source}</span><h3>${esc(o.customer)}</h3><p>${o.payment||'Pagamento non indicato'}${o.readyAt?` · pronto verso le ${new Date(o.readyAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`:''}</p>${o.items.map(itemDetails).join('')}${notifyRow(o)}</article>`}
+
 function kitchen(){if(!state.creator)return loginPanel('Cucina','Le comande contengono i dati di chi ordina: serve l accesso del Creator.');return kitchenPanel(state.orders,Date.now())}
 function bind(){
   // Riscrivere solo #products lasciava i nuovi bottoni senza gestori: dopo un
@@ -162,17 +205,29 @@ function bind(){
   document.querySelector('#recap-new')?.addEventListener('click',()=>{state.receipt=null;save();render()});
   document.querySelector('#recap-sms')?.addEventListener('click',()=>toast(t('recap.sent')));
   document.querySelector('#recap-email')?.addEventListener('click',()=>toast(t('recap.sent')));
-  document.querySelector('#checkout')?.addEventListener('click',async()=>{
+  document.querySelector('#checkout')?.addEventListener('click',()=>{
     const phone=document.querySelector('#phone').value;
     const email=document.querySelector('#email')?.value.trim()||'';
-    if(!orderingOpen())return toast(currentClosure().closed?currentClosure().message:'Il servizio online non è aperto.');
+    if(!orderingOpen())return toast(currentClosure().closed?currentClosure().message:'Il servizio online non e aperto.');
     if(!isValidItalianPhone(phone))return toast('Inserisci un numero di telefono italiano valido.');
     if(email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('Controlla l indirizzo email.');
-    const paymentId=document.querySelector('input[name="payment"]:checked').value;
-    const payment=DEMO_PAYMENT_METHODS.find(method=>method.id===paymentId);
+    // Prima di mandare in cucina si rilegge tutto: una pizza sbagliata scoperta
+    // adesso costa un tocco, scoperta dopo costa una pizza.
+    confirming={
+      name:document.querySelector('#name').value||'',
+      phone,email,
+      paymentId:document.querySelector('input[name="payment"]:checked').value
+    };
+    render();
+  });
+  document.querySelector('#confirm-back')?.addEventListener('click',()=>{confirming=null;render()});
+  document.querySelector('#confirm-send')?.addEventListener('click',async()=>{
+    const dati=confirming;
+    if(!dati)return;
+    const payment=DEMO_PAYMENT_METHODS.find(method=>method.id===dati.paymentId);
     const cartItems=state.cart.map(i=>({...i,quantity:1}));
     const total=state.cart.reduce((n,i)=>n+i.price,0),eta=waitMinutes(countPizzas(cartItems)),businessDate=state.activeDay.date,service=state.services[state.shift],sequence=nextServiceSequence(state.orders,service,state.activeDay),fees=total*payment.feeRate;
-    const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:state.activeDay.id,serviceId:service.id,source:'WEB',customer:document.querySelector('#name').value||'Cliente',phone,email,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:state.shift,createdAt:Date.now(),readyAt:Date.now()+eta*60000,total,gross:total,fee:fees,fees,items:cartItems};
+    const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:state.activeDay.id,serviceId:service.id,source:'WEB',customer:dati.name||'Cliente',phone:dati.phone,email:dati.email,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:state.shift,createdAt:Date.now(),readyAt:Date.now()+eta*60000,total,gross:total,fee:fees,fees,items:cartItems};
     try{
       // Numero pubblico e totale li decide il server: l'anteprima locale
       // servirebbe solo a mostrare un numero che poi cambia.
@@ -184,9 +239,9 @@ function bind(){
         readyAt:order.createdAt+promessi*60000,
         items:cartItems
       },{locale:state.locale,pizzeriaPhone:appConfig.pizzeriaPhone??null});
-      state.cart=[];save();
+      state.cart=[];confirming=null;save();
       await stateRefresh.refresh();
-      render();toast('Ordine demo inviato in cucina!');
+      render();toast('Ordine inviato in cucina.');
     }catch{reportRepositoryError()}
   });
   document.querySelector('#login')?.addEventListener('click',async()=>{try{const session=await runtime.auth.signIn(document.querySelector('#user').value,document.querySelector('#pass').value);state.creator=isCreatorSession(session);await refreshRepositoryState()}catch{toast('Credenziali non corrette')}});
@@ -247,6 +302,9 @@ function bind(){
     if(!state.shift)return toast('Apri prima un servizio.');
     counterDraft={quantities:{},name:'',phone:'',note:'',payment:'cash'};render();
   });
+  document.querySelectorAll('.order-open').forEach(b=>b.onclick=()=>{detailOrderId=b.dataset.order;render()});
+  document.querySelector('#detail-close')?.addEventListener('click',()=>{detailOrderId=null;render()});
+  document.querySelector('#detail-edit')?.addEventListener('click',b=>{editingOrderId=detailOrderId;detailOrderId=null;editorQuantities={};adminSection='history';render()});
   document.querySelector('#counter-close')?.addEventListener('click',()=>{counterDraft=null;render()});
   document.querySelectorAll('.counter-minus,.counter-plus').forEach(b=>b.onclick=()=>{
     const draft=readCounterDraft(),id=b.dataset.id;
@@ -385,6 +443,7 @@ function bind(){
     return async()=>{
       try{
         await repository.updateOrderStatus(id,stato);
+        detailOrderId=null;
         if(runtime.mode==='supabase')await refreshRepositoryState();
         else{const ordine=state.orders.find(o=>String(o.id)===String(id));if(ordine)ordine.status=stato;save();render()}
         toast(messaggio);

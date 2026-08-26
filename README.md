@@ -13,7 +13,7 @@ Il sito e' servito da GitHub Pages a partire dal branch `main`: ogni push su
 
 - Cliente: menu in italiano o inglese, personalizzazione pizza con ingredienti e aggiunte, allergeni, note, carrello, checkout e recap dell'ordine.
 - Creator: calendario, apertura e chiusura turni, ordini presi al telefono, storico con modifica ordine, menu, forno e report.
-- Cucina: banco delle comande, ordinato per scadenza, con numero grande, orario, minuti promessi, ritardo in evidenza, stampa, avviso al cliente e i due stati pronto e consegnato.
+- Cucina: solo la comanda. Numero grande, orario, minuti promessi, ritardo, e per ogni piatto quantita', cosa togliere, cosa aggiungere, la nota del cliente e gli allergeni. Ordinata per scadenza, con i due stati pronto e consegnato.
 
 Creator e Cucina sono la stessa area riservata: le comande portano nome e
 telefono di chi ordina, quindi la Cucina chiede l'accesso come il Creator.
@@ -156,6 +156,18 @@ Il numero di telefono della pizzeria si imposta in `js/config.js` con
 `pizzeriaPhone`. Finche' resta `null` il recap invita a contattare il locale
 senza mostrare un numero inventato: va compilato prima di aprire al pubblico.
 
+## Ordini e conferma
+
+Prima di mandare in cucina il cliente vede un riepilogo: cosa ha ordinato con le
+modifiche, il totale, il pagamento, il nome, il numero e fra quanto sara' pronto.
+Una pizza sbagliata scoperta li' costa un tocco, scoperta dopo costa una pizza.
+
+Nel pannello Creator la sezione Ordini tiene **solo quelli ancora da fare**:
+segnato pronto, l'ordine sparisce dalla lista e resta nello Storico. Toccando un
+ordine si apre la sua scheda con stato, orari, minuti promessi, pagamento,
+totale, tutte le righe con modifiche e allergeni, e i contatti: il numero si
+chiama con un tocco, l'email si scrive con un tocco.
+
 ## Storico e modifica ordine
 
 Lo storico filtra per giornata operativa, turno, origine e stato, e cerca per
@@ -178,11 +190,12 @@ La comanda di cucina si stampa dal dialogo di stampa del browser (Cucina →
 **Stampa comanda**). Il collegamento diretto alla stampante Epson e lo scontrino
 fiscale non ci sono ancora: `docs/stampanti.md` spiega perche' e cosa serve.
 
-Gli avvisi al cliente non partono da soli: mandare un SMS senza che nessuno
-tocchi il telefono richiede un operatore esterno a pagamento con le sue
-credenziali. C'e' un messaggio solo e dice una cosa sola, fra quanto e' pronto,
-con gli stessi minuti che la cucina ha davanti; il bottone apre SMS o WhatsApp
-col testo gia' scritto.
+**Nessun messaggio raggiunge il cliente.** Il tempo di attesa lo vede sulla
+ricevuta subito dopo aver ordinato, ma sul telefono non arriva niente: mandare
+un SMS o un messaggio WhatsApp senza che nessuno tocchi il telefono richiede un
+operatore esterno a pagamento, con un account e una chiave. Finche' non c'e', in
+app non ci sono nemmeno i bottoni: meglio un buco dichiarato che un bottone che
+fa finta.
 
 L'ordine preso al banco senza numero di telefono non e' possibile: il database
 chiede un numero italiano valido, perche' e' con quello che si avvisa.

@@ -8,8 +8,7 @@
 // uscire prima. Il ritardo si vede da lontano, e i minuti promessi sono quelli
 // dati al cliente, non una stima rifatta ogni volta che si guarda lo schermo.
 
-import { promisedMinutes, smsLink, waitMessage, whatsappLink } from '../messages.js';
-import { customizationLines } from '../domain.js';
+import { promisedMinutes } from '../messages.js';
 
 function decorate(order, now) {
   const minutesLeft = order.readyAt ? Math.round((Number(order.readyAt) - now) / 60000) : null;
@@ -42,13 +41,49 @@ function clock(value) {
 
 const ALLERGY = /allerg|celiac|intoller|glutine|lattosio|noci|arachidi|crostacei/i;
 
-function itemLine(item) {
-  const changes = customizationLines(item);
+// «Cereali contenenti glutine» e' la formula di legge, giusta sul menu. Sul
+// banco serve la parola che si usa impastando.
+const ALLERGENE_BREVE = {
+  'cereali contenenti glutine': 'Glutine',
+  'anidride solforosa e solfiti': 'Solfiti',
+  'frutta a guscio': 'Frutta a guscio',
+  'semi di sesamo': 'Sesamo'
+};
+
+// L'allergene arriva come oggetto dal database (etichetta nelle due lingue) o
+// come semplice testo dai dati locali: la comanda deve leggersi in entrambi i
+// casi, non stampare «[object Object]» sul banco.
+function shortAllergen(allergen) {
+  const label = typeof allergen === 'string' ? allergen : (allergen?.label_it ?? allergen?.it ?? '');
+  return ALLERGENE_BREVE[String(label).toLowerCase()] ?? label;
+}
+
+// Le righe sotto il nome del piatto, nell'ordine in cui servono al pizzaiolo:
+// prima cosa NON deve mettere, poi cosa aggiungere, poi la richiesta scritta,
+// infine gli allergeni dichiarati.
+export function ticketLines(item = {}) {
+  const lines = [];
+  const removed = (item.removed ?? []).filter(Boolean);
+  if (removed.length) lines.push({ kind: 'remove', text: `SENZA ${removed.join(', ')}` });
+
+  const additions = (item.additions ?? []).filter(addition => Number(addition.quantity ?? 0) > 0);
+  if (additions.length) {
+    lines.push({ kind: 'add', text: `+ ${additions.map(a => `${a.quantity} ${a.name}`).join(', ')}` });
+  }
+
   const note = String(item.note ?? '').trim();
+  if (note) lines.push({ kind: 'note', text: note, alert: ALLERGY.test(note) });
+
+  const allergens = (item.allergens ?? []).map(shortAllergen).filter(Boolean);
+  if (allergens.length) lines.push({ kind: 'allergens', text: allergens.join(', ') });
+
+  return lines;
+}
+
+function itemLine(item) {
   return `<li>
-    <b>${Number(item.quantity ?? 1)}×</b> ${escapeHtml(item.name ?? '')}
-    ${changes.length ? `<span class="kt-change">${escapeHtml(changes.join(' · '))}</span>` : ''}
-    ${note ? `<span class="kt-note${ALLERGY.test(note) ? ' alert' : ''}">${escapeHtml(note)}</span>` : ''}
+    <div class="kt-item"><b>${Number(item.quantity ?? 1)}</b><span>${escapeHtml(item.name ?? '')}</span></div>
+    ${ticketLines(item).map(line => `<span class="kt-${line.kind}${line.alert ? ' alert' : ''}">${escapeHtml(line.text)}</span>`).join('')}
   </li>`;
 }
 
@@ -66,18 +101,6 @@ function counter(order, waiting) {
     : `<span class="kt-left">${order.minutesLeft} min</span>`;
 }
 
-function notify(order) {
-  if (!order.phone) return '';
-  const testo = waitMessage(order);
-  const sms = smsLink(order.phone, testo);
-  const wa = whatsappLink(order.phone, testo);
-  if (!sms && !wa) return '';
-  return `<div class="kt-notify"><span>Avvisa</span>
-    ${sms ? `<a class="btn secondary" href="${escapeHtml(sms)}">SMS</a>` : ''}
-    ${wa ? `<a class="btn secondary" href="${escapeHtml(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
-  </div>`;
-}
-
 function ticket(order, actions, waiting = false) {
   return `<article class="kt ${order.late && !waiting ? 'late' : ''} ${waiting ? 'done' : ''}">
     <header class="kt-head">
@@ -91,7 +114,6 @@ function ticket(order, actions, waiting = false) {
     <p class="kt-who">${escapeHtml(order.customer ?? 'Cliente')}${order.source ? ` · ${escapeHtml(String(order.source).toLowerCase() === 'web' ? 'dal sito' : 'in pizzeria')}` : ''}</p>
     <ul class="kt-items">${(order.items ?? []).map(itemLine).join('')}</ul>
     <div class="kt-actions">${actions}</div>
-    ${notify(order)}
   </article>`;
 }
 

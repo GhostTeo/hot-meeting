@@ -480,18 +480,43 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 }
 
 .kt-items li:last-child { border-bottom: 0; padding-bottom: 0 }
-.kt-items b { font-family: var(--serif); font-size: 19px }
-.kt-change, .kt-note { display: block; font-size: 13.5px; margin-top: 3px }
-.kt-change { color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em }
-.kt-note { color: var(--accent-dark); font-style: italic }
+.kt-item { display: flex; align-items: baseline; gap: 10px }
 
-.kt-note.alert {
-  font-style: normal;
-  font-weight: 800;
-  background: #fdf0d4;
-  padding: 5px 9px;
+.kt-item b {
+  font-family: var(--serif);
+  font-size: 26px;
+  line-height: 1;
+  min-width: 26px;
+}
+
+.kt-item b::after { content: "×"; font-size: 15px; opacity: .5; margin-left: 1px }
+.kt-item span { font-size: 19px; font-weight: 650 }
+
+.kt-remove, .kt-add, .kt-note, .kt-allergens {
+  display: block;
+  font-size: 14.5px;
+  margin-top: 5px;
+  margin-left: 36px;
+  padding: 4px 9px;
   border-radius: 8px;
 }
+
+/* Cio' che NON deve finire sulla pizza e' l'errore piu' caro: si vede per primo. */
+.kt-remove { background: var(--accent); color: #fff; font-weight: 800; letter-spacing: .02em }
+.kt-add { background: #e4efe6; color: #2c5c40; font-weight: 700 }
+.kt-note { background: #fdf0d4; color: #6b4a12; font-style: italic }
+.kt-note.alert { font-style: normal; font-weight: 800; background: #fde2c7; color: #8a3708 }
+
+.kt-allergens {
+  background: none;
+  padding: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.kt-allergens::before { content: "allergeni · " }
 
 .kt-actions { display: flex; gap: 8px; margin-top: 14px }
 .kt-actions .btn { flex: 1; padding: 14px; font-size: 15px }
@@ -509,11 +534,62 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .kt-notify span { flex: 1; font-size: 12.5px; color: var(--ink-soft) }
 .kt-notify .btn { padding: 7px 12px; font-size: 12px; text-decoration: none; color: var(--ink) }
 
-.notify { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px }
-.notify-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
-.notify-line span { flex: 1; font-size: 13px; color: var(--ink-soft); min-width: 120px }
-.notify-line .btn { padding: 7px 12px; font-size: 12px; text-decoration: none; color: var(--ink) }
-.notify-none { font-size: 12.5px; color: var(--ink-soft); margin: 10px 0 0 }
+/* ---------- Conferma prima di mandare in cucina ---------- */
+
+.confirm-sub { margin: 0 0 16px; color: var(--ink-soft) }
+.confirm-list { list-style: none; margin: 0; padding: 0 }
+
+.confirm-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.confirm-list b { font-size: 16px }
+.confirm-list p { margin: 3px 0 0; font-size: 13px; color: var(--ink-soft) }
+.confirm-list span { font-weight: 700; white-space: nowrap }
+
+.confirm-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 16px 0 6px;
+}
+
+.confirm-total b { font-family: var(--serif); font-size: 26px }
+.confirm-facts { display: grid; gap: 8px; margin: 14px 0 22px }
+.confirm-facts div { display: flex; justify-content: space-between; gap: 14px; font-size: 14px }
+.confirm-facts dt { color: var(--ink-soft) }
+.confirm-facts dd { margin: 0; font-weight: 650; text-align: right }
+.confirm-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px }
+.confirm-actions .btn { padding: 15px; font-size: 15.5px }
+
+/* ---------- Ordini da fare ---------- */
+
+.ordercard { cursor: default; margin-bottom: 14px }
+.ordercard-head { display: flex; align-items: center; gap: 12px }
+.ordercard-head div { flex: 1; min-width: 0 }
+.ordercard-head p { margin: 2px 0 0; font-size: 12.5px; color: var(--ink-soft) }
+.ordercard-n { font-family: var(--serif); font-size: 28px; font-weight: 700 }
+.ordercard-tot { font-weight: 700; white-space: nowrap }
+.ordercard-items { margin: 10px 0 0; font-size: 14px }
+.ordercard .actions { margin: 14px 0 0 }
+.ordercard .actions .btn { flex: 1 }
+
+/* ---------- Scheda di un ordine ---------- */
+
+.detail-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 6px 0 18px }
+.detail-facts div { padding: 12px; border-radius: 14px; background: var(--paper-warm) }
+.detail-facts dt { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-soft) }
+.detail-facts dd { margin: 4px 0 0; font-weight: 700; font-size: 15px }
+.detail-contacts { display: grid; gap: 8px; margin-bottom: 8px }
+.detail-contacts .btn { text-decoration: none; text-align: center; padding: 15px }
+.detail-contacts .btn.secondary { color: var(--ink) }
+.detail-total { display: flex; justify-content: space-between; font-family: var(--serif); font-size: 22px; font-weight: 700; margin: 14px 0 20px }
+.detail-actions { display: grid; gap: 8px }
+.detail-actions .btn { padding: 14px }
 
 .login-card { max-width: 440px; margin: 40px auto }
 .login-card h1 { font-size: 42px; margin-bottom: 8px }
