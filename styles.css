@@ -446,8 +446,9 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 }
 
 .kt.late { border-left-color: var(--accent); background: var(--accent-wash) }
+.kt.done { border-left-color: var(--gold) }
 
-.kt-head { display: flex; align-items: baseline; gap: 12px }
+.kt-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap }
 
 .kt-number {
   font-family: var(--serif);
@@ -456,7 +457,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
   line-height: 1;
 }
 
-.kt-times { display: grid; gap: 2px; font-size: 12px; color: var(--ink-soft); line-height: 1.35 }
+.kt-times { display: grid; gap: 2px; flex: 1 1 130px; font-size: 12px; color: var(--ink-soft); line-height: 1.35 }
 
 .kt-left {
   margin-left: auto;
@@ -467,6 +468,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 }
 
 .kt-left.late { color: var(--accent) }
+.kt-left.waiting { font-size: 17px; color: var(--ink-soft); font-family: var(--sans); font-weight: 650 }
 .kt-who { margin: 10px 0 12px; font-weight: 650; font-size: 15px }
 .kt-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px }
 

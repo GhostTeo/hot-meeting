@@ -52,8 +52,15 @@ function itemLine(item) {
   </li>`;
 }
 
-function counter(order) {
+// In preparazione conta quanto manca. Sul banco dei pronti no: la pizza e' gia'
+// fatta, un ritardo enorme in rosso direbbe soltanto che il cliente tarda a
+// passare. Li' serve sapere da quanto sta aspettando.
+function counter(order, waiting) {
   if (order.minutesLeft == null) return '<span class="kt-left">—</span>';
+  if (waiting) {
+    const attesa = Math.max(0, -order.minutesLeft);
+    return `<span class="kt-left waiting">${attesa === 0 ? 'ora' : `da ${attesa} min`}</span>`;
+  }
   return order.late
     ? `<span class="kt-left late">+${Math.abs(order.minutesLeft)} min</span>`
     : `<span class="kt-left">${order.minutesLeft} min</span>`;
@@ -71,15 +78,15 @@ function notify(order) {
   </div>`;
 }
 
-function ticket(order, actions) {
-  return `<article class="kt ${order.late ? 'late' : ''}">
+function ticket(order, actions, waiting = false) {
+  return `<article class="kt ${order.late && !waiting ? 'late' : ''} ${waiting ? 'done' : ''}">
     <header class="kt-head">
       <span class="kt-number">#${String(order.sequence ?? 0).padStart(2, '0')}</span>
       <div class="kt-times">
         <span>ordinato ${clock(order.createdAt)}</span>
-        <span>promessi ${order.promised ?? '—'} min · esce ${clock(order.readyAt)}</span>
+        <span>${waiting ? `promessi ${order.promised ?? '—'} min` : `promessi ${order.promised ?? '—'} min · esce ${clock(order.readyAt)}`}</span>
       </div>
-      ${counter(order)}
+      ${counter(order, waiting)}
     </header>
     <p class="kt-who">${escapeHtml(order.customer ?? 'Cliente')}${order.source ? ` · ${escapeHtml(String(order.source).toLowerCase() === 'web' ? 'dal sito' : 'in pizzeria')}` : ''}</p>
     <ul class="kt-items">${(order.items ?? []).map(itemLine).join('')}</ul>
@@ -103,6 +110,6 @@ export function kitchenPanel(orders = [], now = Date.now()) {
     ${board.ready.length
       ? `<h2 class="kt-section">Pronti, da consegnare</h2>
          <div class="kt-grid">${board.ready.map(order => ticket(order, `
-           <button class="btn primary collected" data-id="${escapeHtml(order.id)}">Consegnato</button>`)).join('')}</div>`
+           <button class="btn primary collected" data-id="${escapeHtml(order.id)}">Consegnato</button>`, true)).join('')}</div>`
       : ''}`;
 }
