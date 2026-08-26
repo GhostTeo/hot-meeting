@@ -208,7 +208,11 @@ Lo storico filtra per giornata operativa, turno, origine e stato, e cerca per
 cliente, telefono, pagamento o numero ordine scrivendo `#3`. Un ordine non viene
 mai cancellato: annullamenti e revisioni restano visibili.
 
-Modificando un ordine si crea una nuova revisione e la versione precedente
+Modificare un ordine vuol dire cambiarlo davvero: togliere un ingrediente da una
+pizza, aggiungerne uno, cambiare le quantita' e mettere dentro un prodotto che
+nell'ordine non c'era. Ci arriva solo il Creator, e il database lo verifica di
+nuovo: la revisione passa da una funzione che rifiuta chiunque non abbia quel
+ruolo. Si crea una nuova revisione e la versione precedente
 resta nello storico. Il pagamento originale non viene mai alterato: la
 differenza diventa un movimento separato, un supplemento da incassare o un
 rimborso, che nasce in attesa e va poi registrato o annullato dal Creator. Nei
@@ -220,8 +224,12 @@ Apple Pay e Google Pay sono etichette dimostrative senza processore di
 pagamento: nessun addebito, nessun rimborso reale. Non vengono inviati SMS ne'
 email. L'ordine dal ristorante non e' ancora implementato.
 
-La comanda di cucina si stampa dal dialogo di stampa del browser (Cucina →
-**Stampa comanda**). Il collegamento diretto alla stampante Epson e lo scontrino
+La comanda esce da sola quando entra l'ordine, se in Cucina e' acceso
+**«stampa la comanda appena arriva l'ordine»** (e' un'impostazione del singolo
+dispositivo, va accesa su quello collegato alla stampante). Il browser apre
+comunque la finestra di stampa: per farla uscire in silenzio, Chrome va avviato
+con `--kiosk-printing` e una stampante predefinita. Ogni comanda esce una volta
+sola, anche se la pagina si aggiorna. Il collegamento diretto alla stampante Epson e lo scontrino
 fiscale non ci sono ancora: `docs/stampanti.md` spiega perche' e cosa serve.
 
 **Nessun messaggio raggiunge il cliente.** Il tempo di attesa lo vede sulla

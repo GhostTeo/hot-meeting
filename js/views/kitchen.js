@@ -93,12 +93,13 @@ function ticket(order) {
   </article>`;
 }
 
-export function kitchenPanel(orders = [], now = Date.now()) {
+export function kitchenPanel(orders = [], now = Date.now(), autoPrint = false) {
   const board = kitchenBoard(orders, now);
   const inRitardo = board.preparing.filter(order => order.late).length;
   return `<div class="kt-top">
       <h1>Cucina</h1>
       <p>${board.preparing.length} da preparare${inRitardo ? ` · <b class="warning">${inRitardo} in ritardo</b>` : ''}</p>
+      <label class="kt-auto"><input type="checkbox" id="autoprint" ${autoPrint ? 'checked' : ''}> stampa la comanda appena arriva l'ordine</label>
     </div>
     ${board.preparing.length
       ? `<div class="kt-grid">${board.preparing.map(ticket).join('')}</div>

@@ -4,7 +4,8 @@ import { resolveBusinessDate, resolveClosure } from './operations.js';
 import { dailyReport } from './reports.js';
 import { calendarPanel, holidayException, openingException } from './views/calendar.js';
 import { historyDates, orderHistoryPanel } from './views/order-history.js';
-import { orderEditorPanel, previewTotal, revisionItems, revisionIsValid } from './views/order-editor.js';
+import { orderEditorPanel } from './views/order-editor.js';
+import { addLine, draftFromOrder, draftIsValid, draftItems, draftTotal, setNote, stepAddition, stepQuantity, toggleRemoved } from './views/order-draft.js';
 import { calculateAdjustment } from './payments.js';
 import { LOCALES, translate, translatePaymentMethod, translateProduct } from './i18n.js';
 import { buildCustomerRecap, orderReceiptPanel } from './views/order-receipt.js';
@@ -14,11 +15,12 @@ import { orderDetailPanel } from './views/order-detail.js';
 import { closingSteps, workingOrders } from './views/order-flow.js';
 import { buildCloseDialog, closeService, nextServiceSequence, serviceAcceptsOrders, servicePanel, shiftLabel, startServiceWithCalendar } from './views/service.js';
 import { dialogMarkup, restoreDialogFocus, trapDialogFocus } from './ui/dialog.js';
-import { buildKitchenTicket } from './print/kitchen-ticket.js';
+import { printMarkup, ticketsToPrint } from './print/print-queue.js';
 import { promisedMinutes } from './messages.js';
 import { allergenNames, allergenSentence } from './allergens.js';
 import { announceOrders, arrivedOrders, unlockChime } from './notify.js';
 import { orderSuggestions } from './suggestions.js';
+import { groupCartLines, isPlain, plainCartCount } from './cart-lines.js';
 import { loginProblem } from './login-errors.js';
 import { kitchenPanel } from './views/kitchen.js';
 import { appConfig } from './config.js';
@@ -30,7 +32,7 @@ const defaults={view:'customer',creator:false,locale:'it',receipt:null,shift:nul
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
  {id:'cola',type:'drink',name:'Cola',price:3,emoji:'🥤',ingredients:[],available:true}],orders:[]};
-let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let confirming=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorQuantities={}; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null;
+let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let confirming=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let printed=new Set(); let autoPrint=localStorage.getItem('hm-autoprint')==='1';
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
@@ -43,6 +45,7 @@ const stateRefresh=createRepositoryRefreshCoordinator({repository,apply(snapshot
   if(hasRendered)render();
   const avviso=announceOrders(arrivati);
   if(avviso)toast(avviso);
+  if(autoPrint&&arrivati.length)stampaComande(ticketsToPrint(arrivati,printed));
 },onError:reportRepositoryError});
 async function refreshRepositoryState(){try{await stateRefresh.refresh()}catch{}}
 function t(key){return translate(key,state.locale)}
@@ -68,6 +71,16 @@ function ovenSettings(){return state.services[state.shift]?.oven??DEFAULT_OVEN}
 function waitMinutes(pizzas){return readyInMinutes({ahead:pizzasAhead(),pizzas,...ovenSettings()})}
 function currentClosure(date=resolveBusinessDate(Date.now(),state.activeDay)){const closure=resolveClosure(date,state.calendar.closedWeekdays,state.calendar.exceptions);return {...closure,date,message:closure.message||(closure.closed?'Chiuso per riposo settimanale':'')}}
 function orderingOpen(){return Boolean(state.shift&&state.services[state.shift]?.status==='open'&&state.online&&!currentClosure().closed)}
+// La comanda esce da sola quando entra l'ordine: se qualcuno deve premere
+// «stampa», in un venerdi' sera non lo premera'. Il browser apre comunque la
+// finestra di stampa, a meno che Chrome non sia avviato con --kiosk-printing.
+function stampaComande(orders){
+  if(!orders.length)return;
+  const area=document.querySelector('#print-area');
+  if(!area)return;
+  area.innerHTML=printMarkup(orders);
+  window.print();
+}
 function esc(value=''){return String(value).replace(/[&<>'"]/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'})[character])}
 function render(){document.documentElement.lang=state.locale;releaseDialogTrap?.();releaseDialogTrap=null;document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;pendingDialog=null;save();render()});const side=document.querySelector('#topbar-side');if(side)side.innerHTML=state.view==='customer'?langSwitch():'';document.querySelector('#app').innerHTML=(state.view==='customer'?customer():state.view==='creator'?creator():kitchen())+dialogMarkup(pendingDialog,money);bind()}
 function langSwitch(){return `<div class="lang-switch">${LOCALES.map(code=>`<button class="btn ${state.locale===code?'primary':'secondary'} lang-pick" data-locale="${code}">${code.toUpperCase()}</button>`).join('')}</div>`}
@@ -131,16 +144,24 @@ function confirmBody(){
   const total=state.cart.reduce((n,i)=>n+i.price,0);
   const eta=waitMinutes(countPizzas(state.cart.map(i=>({...i,quantity:1}))));
   const metodo=DEMO_PAYMENT_METHODS.find(m=>m.id===confirming.paymentId);
-  const proposte=orderSuggestions(state.cart,state.menu);
+  const proposte=(confirming.suggestions||[]).map(id=>state.menu.find(p=>p.id===id)).filter(Boolean);
   return `<div class="modal-head"><div><span class="eyebrow">${t('confirm.title')}</span><h2>${t('confirm.when')} ${eta} ${t('status.minutes')}</h2></div></div>
     <p class="confirm-sub">${t('confirm.sub')}</p>
-    <ul class="confirm-list">${state.cart.map((i,x)=>{
+    <ul class="confirm-list">${groupCartLines(state.cart).map(riga=>{
+      const i=riga.item;
       const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',
         i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',
         i.note||''].filter(Boolean);
-      return `<li><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}<p class="cart-allergens">${esc(pallergenLine(i))}</p></div><div class="confirm-side"><span>${money(i.price)}</span><button class="btn secondary confirm-remove" data-remove-confirm="${x}" aria-label="${t('cart.remove')}">\u00d7</button></div></li>`;
+      return `<li><div><b>${riga.quantity>1?`${riga.quantity}\u00d7 `:''}${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}<p class="cart-allergens">${esc(pallergenLine(i))}</p></div><div class="confirm-side"><span>${money(riga.total)}</span><button class="btn secondary confirm-remove" data-remove-confirm="${riga.indexes[riga.indexes.length-1]}" aria-label="${t('cart.remove')}">\u00d7</button></div></li>`;
     }).join('')}</ul>
-    ${proposte.length?`<div class="upsell"><span class="upsell-title">${t('confirm.add')}</span><div class="upsell-row">${proposte.map(p=>`<button class="upsell-card" data-suggest="${esc(p.id)}">${p.imageUrl?`<img src="${esc(p.imageUrl)}" alt="" loading="lazy" decoding="async">`:'<span class="upsell-empty"></span>'}<b>${esc(pname(p))}</b><span>+ ${money(p.price)}</span></button>`).join('')}</div></div>`:''}
+    ${proposte.length?`<div class="upsell"><span class="upsell-title">${t('confirm.add')}</span><div class="upsell-row">${proposte.map(p=>{
+      const quante=plainCartCount(state.cart,p.id);
+      return `<div class="upsell-card${quante?' picked':''}">
+        ${p.imageUrl?`<img src="${esc(p.imageUrl)}" alt="" loading="lazy" decoding="async">`:'<span class="upsell-empty"></span>'}
+        <b>${esc(pname(p))}</b><span>${money(p.price)}</span>
+        <div class="upsell-step"><button class="btn secondary" data-suggest-minus="${esc(p.id)}" ${quante?'':'disabled'}>\u2212</button><b>${quante}</b><button class="btn secondary" data-suggest="${esc(p.id)}">+</button></div>
+      </div>`;
+    }).join('')}</div></div>`:''}
     <p class="confirm-total"><span>${t('cart.total')}</span><b>${money(total)}</b></p>
     <dl class="confirm-facts">
       <div><dt>${t('cart.payment')}</dt><dd>${esc(translatePaymentMethod(metodo.id,state.locale))}</dd></div>
@@ -160,10 +181,9 @@ function customizer(){const p=customizing.product,price=calculateCustomizedPrice
 // Cucina e Creator sono la stessa area riservata: le comande contengono nome e
 // telefono di chi ordina, non stanno dietro un semplice cambio di scheda.
 function loginPanel(titolo,sottotitolo){return `<div class="card login-card"><span class="eyebrow">Area riservata</span><h1>${titolo}</h1><p>${sottotitolo}</p><div class="field"><label>${runtime.mode==='supabase'?'Email':'Username'}<input id="user" ${runtime.mode==='supabase'?'type="email" autocomplete="username"':''}></label></div><div class="field"><label>Password<input id="pass" type="password" autocomplete="current-password"></label></div><button class="btn primary" id="login">Accedi</button></div>`}
-function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');return `${editingOrder()?orderEditorPanel(editingOrder(),editorQuantities,money):''}<div class="admin"><aside class="sidebar">${['service','calendar','orders','history','menu','report'].map(s=>`<button class="btn ${adminSection===s?'primary':'secondary'} admin-nav" data-section="${s}">${({service:'Servizio',calendar:'Calendario',orders:'Ordini',history:'Storico',menu:'Menu',report:'Report'})[s]}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
+function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');return `${editorDraft?orderEditorPanel(editorDraft,state.menu,money,editorOpenLine,editorAdding):''}<div class="admin"><aside class="sidebar">${['service','calendar','orders','history','menu','report'].map(s=>`<button class="btn ${adminSection===s?'primary':'secondary'} admin-nav" data-section="${s}">${({service:'Servizio',calendar:'Calendario',orders:'Ordini',history:'Storico',menu:'Menu',report:'Report'})[s]}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
 function ordersWithAdjustments(){const movements=state.adjustments||[];return (state.orders||[]).map(order=>({...order,adjustments:movements.filter(movement=>String(movement.orderId)===String(order.id))}))}
 function detailOrder(){return detailOrderId?(state.orders||[]).find(o=>String(o.id)===String(detailOrderId)):null}
-function editingOrder(){return editingOrderId?state.orders.find(o=>String(o.id)===String(editingOrderId)):null}
 function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders'){
   // Qui stanno solo gli ordini ancora da fare: cliccato «Pronto» l'ordine
   // sparisce da questa lista e resta nello Storico, dove si ritrova sempre.
@@ -197,13 +217,14 @@ function orderCard(o){
   </article>`;
 }
 
-function kitchen(){if(!state.creator)return loginPanel('Cucina','Le comande contengono i dati di chi ordina: serve l accesso del Creator.');return kitchenPanel(state.orders,Date.now())}
+function kitchen(){if(!state.creator)return loginPanel('Cucina','Le comande contengono i dati di chi ordina: serve l accesso del Creator.');return kitchenPanel(state.orders,Date.now(),autoPrint)}
 function bind(){
   // Riscrivere solo #products lasciava i nuovi bottoni senza gestori: dopo un
   // cambio scheda "Personalizza e aggiungi" non rispondeva piu'.
   function bindAddButtons(){
     document.querySelectorAll('.add').forEach(b=>b.onclick=()=>{
       const product=state.menu.find(x=>x.id===b.dataset.id);
+      if(!product)return toast('Questo prodotto non e piu in menu.');
       customizing={product,removed:[],additions:(product.additions||[]).map(a=>({...a,quantity:0})),note:''};
       render();
     });
@@ -243,7 +264,9 @@ function bind(){
     if(label)label.textContent=tolto?t('custom.kept'):t('custom.removed');
     haptic();
   });
-  function stepAddition(index,delta){
+  // Nome diverso da stepAddition importata: dentro bind() la funzione locale
+  // la oscurava, e l'editor del Creator finiva a leggere il carrello.
+  function stepCustomAddition(index,delta){
     const addition=customizing.additions[index];
     addition.quantity=Math.min(5,Math.max(0,addition.quantity+delta));
     const row=document.querySelector(`[data-row="add-${index}"]`);
@@ -255,8 +278,8 @@ function bind(){
     refreshCustomPrice();
     haptic();
   }
-  document.querySelectorAll('.addition-minus').forEach(b=>b.onclick=()=>stepAddition(Number(b.dataset.index),-1));
-  document.querySelectorAll('.addition-plus').forEach(b=>b.onclick=()=>stepAddition(Number(b.dataset.index),1));
+  document.querySelectorAll('.addition-minus').forEach(b=>b.onclick=()=>stepCustomAddition(Number(b.dataset.index),-1));
+  document.querySelectorAll('.addition-plus').forEach(b=>b.onclick=()=>stepCustomAddition(Number(b.dataset.index),1));
   document.querySelector('#custom-add')?.addEventListener('click',()=>{
     const note=document.querySelector('#custom-note').value.trim();
     const price=calculateCustomizedPrice(customizing.product.price,customizing.additions);
@@ -281,7 +304,10 @@ function bind(){
     confirming={
       name:document.querySelector('#name').value||'',
       phone,email,
-      paymentId:document.querySelector('input[name="payment"]:checked').value
+      paymentId:document.querySelector('input[name="payment"]:checked').value,
+      // Le proposte si scelgono adesso e non cambiano piu': se sparissero
+      // appena tocchi il piu', non potresti prenderne quattro.
+      suggestions:orderSuggestions(state.cart,state.menu).map(p=>p.id)
     };
     render();
   });
@@ -299,6 +325,16 @@ function bind(){
       if(!product)return;
       state.cart.push({...product,price:product.price,removed:[],additions:(product.additions||[]).map(a=>({...a,quantity:0})),note:''});
       save();haptic();refreshConfirm();
+    });
+    document.querySelectorAll('[data-suggest-minus]').forEach(b=>b.onclick=()=>{
+      const id=b.dataset.suggestMinus;
+      // Si toglie l'ultimo aggiunto, mai una riga che il cliente ha modificato.
+      for(let i=state.cart.length-1;i>=0;i-=1){
+        if(String(state.cart[i].id)===String(id)&&isPlain(state.cart[i])){state.cart.splice(i,1);break}
+      }
+      save();haptic();
+      if(!state.cart.length){confirming=null;return render()}
+      refreshConfirm();
     });
     document.querySelectorAll('[data-remove-confirm]').forEach(b=>b.onclick=()=>{
       state.cart.splice(Number(b.dataset.removeConfirm),1);save();haptic();
@@ -390,7 +426,7 @@ function bind(){
   });
   document.querySelectorAll('.order-open').forEach(b=>b.onclick=()=>{detailOrderId=b.dataset.order;render()});
   document.querySelector('#detail-close')?.addEventListener('click',()=>{detailOrderId=null;render()});
-  document.querySelector('#detail-edit')?.addEventListener('click',b=>{editingOrderId=detailOrderId;detailOrderId=null;editorQuantities={};adminSection='history';render()});
+  document.querySelector('#detail-edit')?.addEventListener('click',()=>{const id=detailOrderId;detailOrderId=null;adminSection='orders';apriEditor(id)});
   document.querySelector('#counter-close')?.addEventListener('click',()=>{counterDraft=null;render()});
   document.querySelectorAll('.counter-minus,.counter-plus').forEach(b=>b.onclick=()=>{
     const draft=readCounterDraft(),id=b.dataset.id;
@@ -416,38 +452,60 @@ function bind(){
   const historyQuery=document.querySelector('#history-query');
   if(historyQuery)historyQuery.oninput=()=>{historyFilters={...historyFilters,query:historyQuery.value};refocusHistoryQuery=true;render()};
   if(refocusHistoryQuery){refocusHistoryQuery=false;const field=document.querySelector('#history-query');if(field){field.focus();field.setSelectionRange(field.value.length,field.value.length)}}
-  document.querySelectorAll('.history-edit').forEach(b=>b.onclick=()=>{editingOrderId=b.dataset.id;editorQuantities={};render()});
-  document.querySelector('#editor-close')?.addEventListener('click',()=>{editingOrderId=null;editorQuantities={};render()});
-  document.querySelectorAll('.editor-minus,.editor-plus').forEach(b=>b.onclick=()=>{
-    const order=editingOrder();if(!order)return;
-    const item=order.items.find(i=>String(i.id)===b.dataset.id);if(!item)return;
-    const current=editorQuantities[item.id]===undefined?Number(item.quantity??1):Number(editorQuantities[item.id]);
-    const next=b.classList.contains('editor-plus')?Math.min(20,current+1):Math.max(0,current-1);
-    editorQuantities={...editorQuantities,[item.id]:next};render();
+  function apriEditor(id){
+    const ordine=(state.orders||[]).find(o=>String(o.id)===String(id));
+    if(!ordine)return;
+    editingOrderId=id;editorDraft=draftFromOrder(ordine,state.menu);editorOpenLine=null;editorAdding=false;render();
+  }
+  document.querySelectorAll('.history-edit').forEach(b=>b.onclick=()=>apriEditor(b.dataset.id));
+  document.querySelector('#editor-close')?.addEventListener('click',()=>{editingOrderId=null;editorDraft=null;editorOpenLine=null;editorAdding=false;render()});
+  function aggiornaBozza(nuova){
+    // La nota si perde se non la si rilegge prima di ridisegnare.
+    document.querySelectorAll('.edit-note').forEach(campo=>{nuova=setNote(nuova,campo.dataset.key,campo.value)});
+    editorDraft=nuova;render();
+  }
+  document.querySelectorAll('.edit-minus,.edit-plus').forEach(b=>b.onclick=()=>{
+    aggiornaBozza(stepQuantity(editorDraft,b.dataset.key,b.classList.contains('edit-plus')?1:-1));
+  });
+  document.querySelectorAll('.edit-toggle').forEach(b=>b.onclick=()=>{
+    editorOpenLine=editorOpenLine===b.dataset.key?null:b.dataset.key;
+    aggiornaBozza(editorDraft);
+  });
+  document.querySelectorAll('.edit-ing').forEach(b=>b.onclick=()=>{
+    aggiornaBozza(toggleRemoved(editorDraft,b.dataset.key,b.dataset.ing));
+  });
+  document.querySelectorAll('.edit-add-minus,.edit-add-plus').forEach(b=>b.onclick=()=>{
+    aggiornaBozza(stepAddition(editorDraft,b.dataset.key,b.dataset.ing,b.classList.contains('edit-add-plus')?1:-1,state.menu));
+  });
+  document.querySelector('#editor-add')?.addEventListener('click',()=>{editorAdding=!editorAdding;aggiornaBozza(editorDraft)});
+  document.querySelectorAll('.edit-pick').forEach(b=>b.onclick=()=>{
+    const product=state.menu.find(x=>x.id===b.dataset.product);
+    editorAdding=false;
+    aggiornaBozza(addLine(editorDraft,product));
   });
   document.querySelector('#editor-save')?.addEventListener('click',async()=>{
-    const order=editingOrder();if(!order)return;
-    if(!revisionIsValid(order,editorQuantities))return toast('Un ordine non puo restare vuoto.');
+    if(!editorDraft)return;
+    document.querySelectorAll('.edit-note').forEach(campo=>{editorDraft=setNote(editorDraft,campo.dataset.key,campo.value)});
+    if(!draftIsValid(editorDraft))return toast('Un ordine non puo restare vuoto.');
     const reason=document.querySelector('#editor-reason')?.value.trim()||'Modifica del Creator';
     const method=document.querySelector('input[name="adjustment-method"]:checked')?.value;
-    const previousTotal=Number(order.total??0);
-    const expected=calculateAdjustment(previousTotal,previewTotal(order,editorQuantities));
+    const previousTotal=Number(editorDraft.originalTotal??0);
+    const orderId=editingOrderId;
     try{
-      await repository.reviseOrder(order.id,{items:revisionItems(order,editorQuantities),reason});
+      await repository.reviseOrder(orderId,{items:draftItems(editorDraft),reason});
       // Il totale va letto dallo snapshot restituito: un refresh piu' recente
       // innescato dal Realtime puo' scartare l'applicazione di questo, e lo
       // stato in memoria resterebbe indietro per un istante.
       const snapshot=await stateRefresh.refresh();
-      const revised=snapshot.orders.find(o=>String(o.id)===String(order.id));
-      const movement=calculateAdjustment(previousTotal,Number(revised?.total??previewTotal(order,editorQuantities)));
+      const revised=snapshot.orders.find(o=>String(o.id)===String(orderId));
+      const movement=calculateAdjustment(previousTotal,Number(revised?.total??draftTotal(editorDraft,state.menu)));
       if(movement.type!=='none'){
-        await repository.recordPaymentAdjustment(order.id,{...movement,method:movement.type==='supplement'?(method||'cash'):null,note:reason});
+        await repository.recordPaymentAdjustment(orderId,{...movement,method:movement.type==='supplement'?(method||'cash'):null,note:reason});
         await stateRefresh.refresh();
       }
-      editingOrderId=null;editorQuantities={};render();
+      editingOrderId=null;editorDraft=null;editorOpenLine=null;editorAdding=false;render();
       toast(movement.type==='supplement'?`Revisione salvata · supplemento ${money(movement.amount)}`:movement.type==='refund'?`Revisione salvata · rimborso ${money(movement.amount)}`:'Revisione salvata.');
-      if(movement.type!=='none'&&expected.type!==movement.type)toast('Il totale ricalcolato dal server differisce dall anteprima.');
-    }catch{reportRepositoryError()}
+    }catch(error){toast(error?.message?`Non salvato: ${error.message}`:'Non salvato.')}
   });
   document.querySelectorAll('.movement-record,.movement-cancel').forEach(b=>b.onclick=async()=>{
     const status=b.classList.contains('movement-record')?'recorded':'cancelled';
@@ -533,14 +591,12 @@ function bind(){
   document.querySelectorAll('.availability').forEach(b=>b.onclick=()=>{const p=state.menu.find(x=>x.id===b.dataset.id);p.available=!p.available;save();render();void repository.saveProduct(p).catch(reportRepositoryError)});
   document.querySelectorAll('.ticket').forEach(b=>b.onclick=()=>{
     const order=state.orders.find(o=>String(o.id)===b.dataset.id);
-    if(!order)return;
-    const area=document.querySelector('#print-area');
-    area.innerHTML=buildKitchenTicket(order).map(row=>{
-      if(row.kind==='separator')return '<div>'+'-'.repeat(42)+'</div>';
-      const cls=row.kind==='number'?' class="ticket-number"':row.alert?' class="ticket-alert"':'';
-      return `<div${cls}>${esc(row.text)}</div>`;
-    }).join('');
-    window.print();
+    if(order)stampaComande([order]);
+  });
+  document.querySelector('#autoprint')?.addEventListener('change',event=>{
+    autoPrint=event.target.checked;
+    localStorage.setItem('hm-autoprint',autoPrint?'1':'0');
+    toast(autoPrint?'Le comande usciranno da sole.':'Stampa automatica spenta.');
   });
   // Pronto e consegnato sono due momenti diversi: fra i due la pizza aspetta
   // sul banco e chi la ritira deve ancora arrivare.

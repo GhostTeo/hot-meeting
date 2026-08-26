@@ -1,9 +1,9 @@
 // L'avviso quando entra un ordine.
 //
 // Chi sta in cassa non guarda lo schermo tutto il tempo: se un ordine arriva in
-// silenzio, si scopre quando il cliente e' gia' sulla porta. Serve un trillo
-// breve e una vibrazione, non una sirena: in pizzeria c'e' gia' abbastanza
-// rumore.
+// silenzio, si scopre quando il cliente e' gia' sulla porta. Il trillo deve
+// passare sopra il forno, le voci e la cappa: tre note ripetute due volte, non
+// un rintocco educato che nessuno sente.
 //
 // Il suono e' generato dal browser, non e' un file da scaricare: non pesa
 // niente e non c'e' niente da caricare la prima volta.
@@ -48,12 +48,23 @@ function note(frequency, start, duration, volume) {
   oscillator.stop(start + duration + 0.02);
 }
 
+// Due terzine identiche a mezzo secondo di distanza: una si perde nel rumore,
+// due no. Il volume e' alto ma le note sono corte, quindi non da' fastidio.
+const MOTIVO = [
+  { hz: 1047, quando: 0, durata: 0.18, volume: 0.55 },
+  { hz: 1319, quando: 0.15, durata: 0.18, volume: 0.55 },
+  { hz: 1568, quando: 0.30, durata: 0.42, volume: 0.6 }
+];
+
 export function chime() {
   if (!unlockChime() || !audio) return false;
   try {
     const adesso = audio.currentTime + 0.01;
-    note(988, adesso, 0.16, 0.12);
-    note(1319, adesso + 0.13, 0.26, 0.10);
+    for (const ripetizione of [0, 0.62]) {
+      for (const nota of MOTIVO) {
+        note(nota.hz, adesso + ripetizione + nota.quando, nota.durata, nota.volume);
+      }
+    }
     return true;
   } catch {
     return false;
@@ -62,7 +73,7 @@ export function chime() {
 
 export function buzz() {
   try {
-    return Boolean(navigator.vibrate?.([70, 60, 70]));
+    return Boolean(navigator.vibrate?.([120, 80, 120, 80, 220]));
   } catch {
     return false;
   }
