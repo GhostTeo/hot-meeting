@@ -71,7 +71,21 @@
   border-bottom: 1px solid var(--line);
 }
 
+/* La riga toccata cambia da sola, senza ricostruire la pagina: qui si vede il
+   risultato del tocco. */
+.option-row {
+  border-radius: 12px;
+  padding-left: 10px;
+  padding-right: 10px;
+  margin: 0 -10px;
+  transition: background .16s ease;
+}
+
+.option-row.removed { background: var(--accent-wash) }
 .option-row.removed span { text-decoration: line-through; color: var(--ink-soft) }
+.option-row.picked { background: #e9f2ec }
+.option-row.picked .stepper b { color: #2c5c40 }
+.option-row .stepper b { transition: transform .12s ease }
 
 .stepper { display: flex; align-items: center; gap: 10px }
 .stepper b { min-width: 62px; text-align: center; font-size: 14px }

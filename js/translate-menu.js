@@ -156,40 +156,57 @@ function matchLongest(words) {
 
 function translateSegment(segment) {
   const words = segment.trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return '';
+  if (!words.length) return { text: '', known: 0, total: 0, matches: 0 };
   const output = [];
   let index = 0;
-  let untouched = 0;
+  let known = 0;
+  let matches = 0;
   while (index < words.length) {
     const match = matchLongest(words.slice(index));
     if (match) {
       output.push(match.english);
+      known += match.used;
+      matches += 1;
       index += match.used;
       continue;
     }
     const connective = CONNECTIVES.get(fold(words[index]));
     if (connective) {
+      // La congiunzione e' tradotta bene, ma da sola non e' una traduzione:
+      // conta per la copertura, non per decidere se vale la pena tradurre.
       output.push(connective);
-      // Una congiunzione non e' una traduzione: «di» che diventa «of» dentro
-      // una frase per il resto italiana peggiora le cose.
-      untouched += 1;
+      known += 1;
       index += 1;
       continue;
     }
     output.push(words[index]);
-    untouched += 1;
     index += 1;
   }
   // Se non si e' riconosciuto nessun ingrediente, si lascia l'italiano intatto.
-  return untouched === words.length ? segment.trim() : output.join(' ');
+  const text = matches === 0 ? segment.trim() : output.join(' ');
+  return { text, known, total: words.length, matches };
+}
+
+function translateParts(source) {
+  return source.split(/([,;])/).map(part =>
+    ([',', ';'].includes(part) ? { text: part, known: 0, total: 0, matches: 0 } : translateSegment(part)));
+}
+
+// Quanto della frase il vocabolario ha davvero riconosciuto, fra 0 e 1. Serve a
+// non pubblicare mezze traduzioni: «White base, with sausage sbriciolata a
+// mano» non e' inglese, e' un errore visibile sul menu.
+export function translationCoverage(text = '') {
+  const parts = translateParts(String(text ?? '').trim());
+  const total = parts.reduce((sum, part) => sum + part.total, 0);
+  if (!total) return 0;
+  return parts.reduce((sum, part) => sum + part.known, 0) / total;
 }
 
 export function translateToEnglish(text = '') {
   const source = String(text ?? '').trim();
   if (!source) return '';
-  const translated = source
-    .split(/([,;])/)
-    .map(part => ([',', ';'].includes(part) ? part : translateSegment(part)))
+  const translated = translateParts(source)
+    .map(part => part.text)
     .join('')
     .replace(/,(?=\S)/g, ', ')
     .trim();

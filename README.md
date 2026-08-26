@@ -129,10 +129,18 @@ Un limite da conoscere: il prezzo di un'aggiunta appartiene all'ingrediente, non
 alla singola pizza. Cambiare il prezzo delle olive come aggiunta lo cambia su
 tutte le pizze che le offrono.
 
-L'inglese non si scrive a mano: lo mette un vocabolario di cucina
-(`js/translate-menu.js`). Non e' un traduttore automatico ed e' voluto, perche'
-un traduttore generico farebbe della Diavola una «Devil»; cio' che il
-vocabolario non conosce resta in italiano invece di essere inventato.
+L'inglese degli ingredienti non si scrive a mano: lo mette un vocabolario di
+cucina (`js/translate-menu.js`). Non e' un traduttore automatico ed e' voluto,
+perche' un traduttore generico farebbe della Diavola una «Devil».
+
+Una descrizione pero' e' una frase, non un elenco: il vocabolario la traduce solo
+se la riconosce quasi tutta. Sotto quella soglia il menu inglese non mostra la
+descrizione invece di mostrarne una mezza in italiano, e nell'editor c'e' un
+campo per scriverla, gia' compilato quando la traduzione automatica regge.
+
+`supabase/menu.json` contiene la carta: per caricarne una nuova si riscrive quel
+file e si lancia `supabase/seed-menu.mjs`, che passa dalle stesse funzioni del
+pannello Creator.
 
 Ogni piatto puo' avere una **foto**, caricata dall'editor o indicata con un
 indirizzo `https`. Le immagini stanno in un archivio pubblico in lettura e

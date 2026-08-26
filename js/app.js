@@ -8,7 +8,7 @@ import { orderEditorPanel, previewTotal, revisionItems, revisionIsValid } from '
 import { calculateAdjustment } from './payments.js';
 import { LOCALES, translate, translatePaymentMethod, translateProduct } from './i18n.js';
 import { buildCustomerRecap, orderReceiptPanel } from './views/order-receipt.js';
-import { draftFromProduct, emptyDraft, menuPanel, menuProductPayload } from './views/menu-editor.js';
+import { additionRow, draftFromProduct, emptyDraft, menuPanel, menuProductPayload } from './views/menu-editor.js';
 import { counterOrderIssues, counterOrderPanel, counterOrderPayload } from './views/counter-order.js';
 import { orderDetailPanel } from './views/order-detail.js';
 import { closingSteps, workingOrders } from './views/order-flow.js';
@@ -34,8 +34,14 @@ const stateRefresh=createRepositoryRefreshCoordinator({repository,apply(snapshot
 async function refreshRepositoryState(){try{await stateRefresh.refresh()}catch{}}
 function t(key){return translate(key,state.locale)}
 function pname(product){return translateProduct(product.names??{it:product.name},state.locale)||product.name||''}
+// La descrizione non ha ripiego: in inglese o c'e' in inglese o non si mostra.
+// Una frase italiana sotto la bandiera inglese e' un errore che si vede.
+function pdesc(product){const d=product.descriptions??{};return state.locale==='it'?(d.it??''):(d.en??'')}
 function localIngredient(name,translations){const match=(translations||[]).find(entry=>entry.it===name);return match?translateProduct(match,state.locale):name}
 function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(v)}
+// Un colpetto sul telefono a ogni scelta: si capisce che ha registrato senza
+// dover guardare. Dove non c'e' il motorino, non succede niente.
+function haptic(){try{navigator.vibrate?.(8)}catch{}}
 function toast(text){const el=document.querySelector('#toast');el.textContent=text;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200)}
 // Solo le pizze occupano il forno: le bibite non allungano l'attesa di nessuno.
 function isPizza(item){const product=state.menu.find(p=>String(p.databaseId??p.id)===String(item.productId??item.id));return product?product.type==='pizza':true}
@@ -73,7 +79,7 @@ function customer(){
 // riquadro caldo, mai un'immagine rotta.
 function dishPhoto(product,variant='dish'){
   const inner=product.imageUrl
-    ? `<img src="${esc(product.imageUrl)}" alt="${esc(pname(product))}" loading="lazy">`
+    ? `<img src="${esc(product.imageUrl)}" alt="${esc(pname(product))}" loading="lazy" decoding="async">`
     : `<span class="emoji">${product.emoji||'\u{1F355}'}</span>`;
   const base=variant==='modal'?'modal-photo':'dish-photo';
   return `<div class="${base}${product.imageUrl?'':' empty'}">${inner}</div>`;
@@ -85,7 +91,7 @@ function products(type){
   if(!list.length)return `<p>${t('product.drink')}</p>`;
   return list.map(p=>{
     const ingredients=(p.ingredients||[]).map(name=>localIngredient(name,p.ingredientNames)).join(', ');
-    const description=translateProduct(p.descriptions??{},state.locale);
+    const description=pdesc(p);
     return `<article class="dish${closed?' sold-out':''}">
       ${dishPhoto(p)}
       <div class="dish-body">
@@ -129,7 +135,7 @@ function confirmPanel(){
 function cart(){const total=state.cart.reduce((n,i)=>n+i.price,0),closed=currentClosure().closed;return `<div class="cart-head"><h2>${t('cart.title')}</h2><button class="btn secondary" id="cart-close">${t('cart.close')}</button></div>${state.cart.map((i,x)=>{const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',i.note||''].filter(Boolean);return `<div class="cart-line"><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}</div><div class="cart-line-side"><span>${money(i.price)}</span><button class="btn secondary" data-remove="${x}">${t('cart.remove')}</button></div></div>`}).join('')||`<p>${t('cart.empty')}</p>`}<h3 class="cart-total">${t('cart.total')} ${money(total)}</h3>${state.cart.length?`<div class="field"><label>${t('cart.name')}<input id="name"></label></div><div class="field"><label>${t('cart.phone')}<input id="phone" inputmode="tel"></label></div><div class="field"><label>${t('cart.email')}<input id="email" type="email" inputmode="email"></label></div><div class="field"><span>${t('cart.payment')}</span><div class="payment-grid">${DEMO_PAYMENT_METHODS.map((method,index)=>`<label class="payment-option"><input type="radio" name="payment" value="${method.id}" ${index===0?'checked':''}> <b>${translatePaymentMethod(method.id,state.locale)}</b></label>`).join('')}</div></div><button class="btn primary" id="checkout" ${closed?'disabled':''}>${closed?t('product.closed'):t('cart.confirm')}</button>`:''}`}
 
 
-function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.map((addition,index)=>`<div class="option-row"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}">\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}<div class="allergens"><b>${t('custom.allergens')}: ${(p.allergenLabels||[]).map(label=>translateProduct(label,state.locale)).join(', ')||(p.allergens||[]).join(', ')||t('custom.none')}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
+function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}" data-row="ing-${index}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.map((addition,index)=>`<div class="option-row${addition.quantity?' picked':''}" data-row="add-${index}"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}" ${addition.quantity?'':'disabled'}>\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}<div class="allergens"><b>${t('custom.allergens')}: ${(p.allergenLabels||[]).map(label=>translateProduct(label,state.locale)).join(', ')||(p.allergens||[]).join(', ')||t('custom.none')}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
 
 // Cucina e Creator sono la stessa area riservata: le comande contengono nome e
 // telefono di chi ordina, non stanno dietro un semplice cambio di scheda.
@@ -175,29 +181,62 @@ function kitchen(){if(!state.creator)return loginPanel('Cucina','Le comande cont
 function bind(){
   // Riscrivere solo #products lasciava i nuovi bottoni senza gestori: dopo un
   // cambio scheda "Personalizza e aggiungi" non rispondeva piu'.
-  document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{productFilter=b.dataset.filter;render()});
-  document.querySelectorAll('.add').forEach(b=>b.onclick=()=>{
-    const product=state.menu.find(x=>x.id===b.dataset.id);
-    customizing={product,removed:[],additions:(product.additions||[]).map(a=>({...a,quantity:0})),note:''};
-    render();
+  function bindAddButtons(){
+    document.querySelectorAll('.add').forEach(b=>b.onclick=()=>{
+      const product=state.menu.find(x=>x.id===b.dataset.id);
+      customizing={product,removed:[],additions:(product.additions||[]).map(a=>({...a,quantity:0})),note:''};
+      render();
+    });
+  }
+  bindAddButtons();
+  // Cambiare scheda riscrive solo l'elenco: la testata e le foto gia' caricate
+  // restano dove sono.
+  document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{
+    productFilter=b.dataset.filter;
+    const elenco=document.querySelector('#products');
+    if(!elenco)return render();
+    elenco.innerHTML=products(productFilter);
+    document.querySelectorAll('[data-filter]').forEach(x=>{
+      const attiva=x.dataset.filter===productFilter;
+      x.classList.toggle('primary',attiva);
+      x.classList.toggle('secondary',!attiva);
+    });
+    bindAddButtons();
+    haptic();
   });
   document.querySelector('#custom-close')?.addEventListener('click',()=>{customizing=null;render()});
+  // Toccare un ingrediente cambia una riga, non la pagina: ricostruire tutto
+  // faceva sparire e riapparire le foto e sembrava un ricaricamento.
+  function refreshCustomPrice(){
+    const cta=document.querySelector('#custom-add');
+    if(cta)cta.textContent=`${t('custom.add')} \u00b7 ${money(calculateCustomizedPrice(customizing.product.price,customizing.additions))}`;
+  }
   document.querySelectorAll('.ingredient-toggle').forEach(b=>b.onclick=()=>{
-    const ingredient=customizing.product.ingredients[Number(b.dataset.index)];
-    customizing.note=document.querySelector('#custom-note').value;
-    customizing.removed=customizing.removed.includes(ingredient)?customizing.removed.filter(x=>x!==ingredient):[...customizing.removed,ingredient];
-    render();
+    const index=Number(b.dataset.index);
+    const ingredient=customizing.product.ingredients[index];
+    const tolto=customizing.removed.includes(ingredient);
+    customizing.removed=tolto?customizing.removed.filter(x=>x!==ingredient):[...customizing.removed,ingredient];
+    const row=document.querySelector(`[data-row="ing-${index}"]`);
+    row?.classList.toggle('removed',!tolto);
+    b.textContent=tolto?'\u2212':'+';
+    const label=row?.querySelector('.stepper b');
+    if(label)label.textContent=tolto?t('custom.kept'):t('custom.removed');
+    haptic();
   });
-  document.querySelectorAll('.addition-minus').forEach(b=>b.onclick=()=>{
-    customizing.note=document.querySelector('#custom-note').value;
-    const addition=customizing.additions[Number(b.dataset.index)];
-    addition.quantity=Math.max(0,addition.quantity-1);render();
-  });
-  document.querySelectorAll('.addition-plus').forEach(b=>b.onclick=()=>{
-    customizing.note=document.querySelector('#custom-note').value;
-    const addition=customizing.additions[Number(b.dataset.index)];
-    addition.quantity=Math.min(5,addition.quantity+1);render();
-  });
+  function stepAddition(index,delta){
+    const addition=customizing.additions[index];
+    addition.quantity=Math.min(5,Math.max(0,addition.quantity+delta));
+    const row=document.querySelector(`[data-row="add-${index}"]`);
+    const label=row?.querySelector('.stepper b');
+    if(label)label.textContent=addition.quantity;
+    row?.classList.toggle('picked',addition.quantity>0);
+    const meno=row?.querySelector('.addition-minus');
+    if(meno)meno.disabled=addition.quantity===0;
+    refreshCustomPrice();
+    haptic();
+  }
+  document.querySelectorAll('.addition-minus').forEach(b=>b.onclick=()=>stepAddition(Number(b.dataset.index),-1));
+  document.querySelectorAll('.addition-plus').forEach(b=>b.onclick=()=>stepAddition(Number(b.dataset.index),1));
   document.querySelector('#custom-add')?.addEventListener('click',()=>{
     const note=document.querySelector('#custom-note').value.trim();
     const price=calculateCustomizedPrice(customizing.product.price,customizing.additions);
@@ -383,6 +422,7 @@ function bind(){
       type:val('#menu-type')||menuDraft.type,
       name:val('#menu-name'),
       description:val('#menu-desc'),
+      descriptionEn:val('#menu-desc-en'),
       ingredients:val('#menu-ingredients'),
       price:val('#menu-price'),
       available:document.querySelector('#menu-available')?.checked??menuDraft.available,
@@ -407,8 +447,26 @@ function bind(){
       menuDraft={...draft,imageUrl:url};render();toast('Foto caricata.');
     }catch(error){menuDraft=draft;render();toast(error?.message?`Foto non caricata: ${error.message}`:'Foto non caricata.')}
   });
-  document.querySelector('#menu-add-add')?.addEventListener('click',()=>{const d=readMenuDraft();menuDraft={...d,additions:[...(d.additions||[]),{name:'',price:''}]};render()});
-  document.querySelectorAll('.menu-add-del').forEach(b=>b.onclick=()=>{const d=readMenuDraft();menuDraft={...d,additions:d.additions.filter((_,i)=>i!==Number(b.dataset.index))};render()});
+  // Aggiungere un extra appende una riga: riscrivere la scheda intera faceva
+  // perdere quello che si stava scrivendo e sembrava un ricaricamento.
+  document.querySelector('#menu-add-add')?.addEventListener('click',()=>{
+    const d=readMenuDraft();
+    const righe=[...(d.additions||[]),{name:'',price:''}];
+    menuDraft={...d,additions:righe};
+    const contenitore=document.querySelector('#menu-add-rows');
+    if(!contenitore)return render();
+    contenitore.insertAdjacentHTML('beforeend',additionRow({name:'',price:''},righe.length-1));
+    bindMenuRows();
+    contenitore.querySelector('.menu-add-row:last-child .menu-add-name')?.focus();
+  });
+  function bindMenuRows(){
+    document.querySelectorAll('.menu-add-del').forEach(b=>b.onclick=()=>{
+      const d=readMenuDraft();
+      menuDraft={...d,additions:d.additions.filter((_,i)=>i!==Number(b.dataset.index))};
+      render();
+    });
+  }
+  bindMenuRows();
   document.querySelector('#menu-save')?.addEventListener('click',async()=>{
     const draft=readMenuDraft();
     if(!String(draft.name||'').trim())return toast('Serve un nome.');

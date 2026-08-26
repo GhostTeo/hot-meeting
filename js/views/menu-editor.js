@@ -9,7 +9,7 @@
 // viaggia separata dal resto del prodotto. La posizione nel menu la decide
 // l'ordine di creazione.
 
-import { translateToEnglish } from '../translate-menu.js';
+import { translateToEnglish, translationCoverage } from '../translate-menu.js';
 
 function euro(value) {
   return Number(value || 0).toFixed(2);
@@ -21,7 +21,7 @@ function cents(value) {
 
 export function emptyDraft() {
   return {
-    id: null, type: 'pizza', name: '', description: '',
+    id: null, type: 'pizza', name: '', description: '', descriptionEn: '',
     price: '', available: true, sortOrder: 0, imageUrl: '',
     ingredients: '', additions: [], allergenIds: []
   };
@@ -33,6 +33,7 @@ export function draftFromProduct(product = {}) {
     type: product.type ?? 'pizza',
     name: product.names?.it ?? product.name ?? '',
     description: product.descriptions?.it ?? '',
+    descriptionEn: product.descriptions?.en ?? '',
     price: euro(product.price),
     available: product.available !== false,
     sortOrder: Number(product.sortOrder ?? 0),
@@ -44,6 +45,19 @@ export function draftFromProduct(product = {}) {
     })),
     allergenIds: [...(product.allergenIds ?? [])]
   };
+}
+
+// Una descrizione e' una frase, non un elenco: il vocabolario di cucina la
+// traduce solo quando e' fatta di ingredienti. Se torna identica all'italiano
+// vuol dire che non l'ha tradotta, e una frase italiana sotto la bandiera
+// inglese e' peggio di nessuna frase. Chi vuole la scrive a mano.
+export function englishDescription(draft = {}) {
+  const scritta = String(draft.descriptionEn ?? '').trim();
+  if (scritta) return scritta;
+  const italiana = String(draft.description ?? '').trim();
+  if (!italiana) return '';
+  // Meno di questo e la frase resta mezza in italiano: meglio niente.
+  return translationCoverage(italiana) >= 0.9 ? translateToEnglish(italiana) : '';
 }
 
 function splitIngredients(value = '') {
@@ -62,7 +76,7 @@ export function menuProductPayload(draft = {}) {
   // «Bufala», non diventa «Buffalo mozzarella». Una bibita invece si traduce,
   // perche' «Acqua naturale» a un inglese non dice niente.
   const nomeEn = (draft.type ?? 'pizza') === 'drink' ? translateToEnglish(nome) : nome;
-  if (nomeEn) translations.en = { name: nomeEn, description: translateToEnglish(descrizione) };
+  if (nomeEn) translations.en = { name: nomeEn, description: englishDescription(draft) };
 
   const payload = {
     product_type: draft.type ?? 'pizza',
@@ -120,7 +134,7 @@ function menuCard(product, money) {
   </article>`;
 }
 
-function additionRow(row, index) {
+export function additionRow(row = {}, index = 0) {
   return `<div class="menu-add-row">
     <input class="menu-add-name" data-index="${index}" value="${escapeHtml(row.name ?? '')}" placeholder="Aggiunta (es. Olive)">
     <input class="menu-add-price" data-index="${index}" value="${escapeHtml(row.price ?? '')}" inputmode="decimal" placeholder="€">
@@ -146,11 +160,13 @@ function menuEditor(draft, allergens, canUpload) {
     <p class="editor-note">Separali con la virgola. L'inglese lo scriviamo noi.</p>
 
     <div class="field"><label>Descrizione (facoltativa)<input id="menu-desc" value="${escapeHtml(draft.description)}" placeholder="La nostra classica, con basilico fresco"></label></div>
+    ${draft.description ? `<div class="field"><label>La stessa in inglese<input id="menu-desc-en" value="${escapeHtml(draft.descriptionEn || englishDescription(draft))}" placeholder="${escapeHtml(englishDescription(draft) || 'Scrivila tu: una frase intera il vocabolario non la sa tradurre')}"></label></div>
+    <p class="editor-note">Gli ingredienti li traduciamo noi. Una frase scritta da te no: se la lasci vuota, il menu inglese mostra solo gli ingredienti.</p>` : ''}
 
     ${photoField(draft, canUpload)}
 
     <h3>Aggiunte a pagamento</h3>
-    ${(draft.additions ?? []).map(additionRow).join('') || '<p><small>Nessuna.</small></p>'}
+    <div id="menu-add-rows">${(draft.additions ?? []).map(additionRow).join('')}</div>
     <button class="btn secondary" id="menu-add-add">+ Aggiungi un extra</button>
 
     <h3>Allergeni</h3>

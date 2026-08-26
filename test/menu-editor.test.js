@@ -75,3 +75,36 @@ test('una riga di ingredienti vuota non diventa un ingrediente senza nome', () =
 
   assert.deepEqual(payload.ingredients.map(row => row.name_it), ['Pomodoro', 'aglio']);
 });
+
+test('la descrizione inglese si puo scrivere a mano quando il vocabolario non basta', () => {
+  const payload = menuProductPayload({
+    type: 'pizza', name: 'Crudo e Burrata', price: '14',
+    ingredients: 'Pomodorini, burrata, prosciutto crudo, rucola',
+    description: 'Fuori dal forno si aggiunge tutto a crudo.',
+    descriptionEn: 'Everything is added raw, straight out of the oven.'
+  });
+
+  assert.equal(payload.translations.en.description, 'Everything is added raw, straight out of the oven.');
+});
+
+test('una descrizione che il vocabolario non sa tradurre non finisce in inglese a meta', () => {
+  // Una frase intera non e' un elenco di ingredienti: se resta identica
+  // all'italiano vuol dire che non e' stata tradotta, e mostrarla sotto la
+  // bandiera inglese sarebbe peggio che non mostrarla.
+  const payload = menuProductPayload({
+    type: 'pizza', name: 'Boscaiola', price: '12',
+    ingredients: 'Fiordilatte, salsiccia',
+    description: 'Bianca, con salsiccia sbriciolata a mano.'
+  });
+
+  assert.equal(payload.translations.en.description, '');
+});
+
+test('una descrizione fatta di ingredienti si traduce da sola', () => {
+  const payload = menuProductPayload({
+    type: 'pizza', name: 'Margherita', price: '8',
+    ingredients: 'Pomodoro', description: 'Pomodoro, mozzarella e basilico'
+  });
+
+  assert.equal(payload.translations.en.description, 'Tomato, mozzarella and basil');
+});

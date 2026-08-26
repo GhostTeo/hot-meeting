@@ -1,6 +1,9 @@
-// Menu dimostrativo: una carta da pizzeria vera, per vedere l'app come la
-// vedrebbe un cliente. Passa dalle stesse funzioni del pannello Creator, quindi
-// se funziona questo funziona anche modificare a mano.
+// Carica una carta intera nel menu, passando dalle stesse funzioni del pannello
+// Creator: se funziona questo, funziona anche modificare a mano.
+//
+// La carta sta in `menu.json`, accanto a questo file: nome, prezzo, ingredienti
+// separati da virgole, descrizione nelle due lingue, allergeni per nome e la
+// foto. Per caricare un menu nuovo si riscrive quel file, non questo.
 //
 // Le foto sono segnaposto presi da Unsplash (licenza libera anche per uso
 // commerciale) e vanno sostituite con le fotografie vere dei piatti: sono qui
@@ -11,116 +14,37 @@
 //
 // La password non sta nel repository e non deve entrarci.
 
+import { readFileSync } from 'node:fs';
+
 import { translateToEnglish } from '../js/translate-menu.js';
 
-const URL = process.env.SUPABASE_URL ?? 'https://nzoqtfbvyhemclwmwyah.supabase.co';
+const BASE = process.env.SUPABASE_URL ?? 'https://nzoqtfbvyhemclwmwyah.supabase.co';
 const KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_jEkf-urcoWX9eozzebbrrw_OXnd4t45';
 const EMAIL = process.env.SUPABASE_EMAIL;
 const PASSWORD = process.env.SUPABASE_PASSWORD;
 
-const allergene = numero => `10000000-0000-4000-8000-${String(numero).padStart(12, '0')}`;
-const GLUTINE = allergene(1);
-const LATTE = allergene(7);
-const PESCE = allergene(4);
-const UOVA = allergene(3);
-const SOLFITI = allergene(12);
-const foto = id => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=900&q=70`;
+const ALLERGENI = {
+  glutine: 1, crostacei: 2, uova: 3, pesce: 4, arachidi: 5, soia: 6, latte: 7,
+  'frutta a guscio': 8, sedano: 9, senape: 10, sesamo: 11, solfiti: 12,
+  lupini: 13, molluschi: 14
+};
 
-const AGGIUNTE_CLASSICHE = [
-  { name: 'Mozzarella di bufala', price: '2' },
-  { name: 'Prosciutto cotto', price: '2' },
-  { name: 'Funghi', price: '1.5' },
-  { name: 'Olive', price: '1' }
-];
+function allergene(nome) {
+  const numero = ALLERGENI[String(nome).toLowerCase()];
+  if (!numero) throw new Error(`Allergene sconosciuto: ${nome}`);
+  return `10000000-0000-4000-8000-${String(numero).padStart(12, '0')}`;
+}
 
-const MENU = [
-  {
-    name: 'Marinara', price: '6.50', ingredients: 'Pomodoro, aglio, origano, olio evo',
-    description: 'La piu semplice e la piu difficile: senza mozzarella, solo pomodoro e origano.',
-    allergens: [GLUTINE], photo: '1571997478779-2adcbbe9ab2f',
-    additions: [{ name: 'Fiordilatte', price: '1.5' }, ...AGGIUNTE_CLASSICHE.slice(2)]
-  },
-  {
-    name: 'Margherita', price: '8.00', ingredients: 'Pomodoro, fiordilatte, basilico',
-    description: 'Quella di sempre, con basilico fresco messo in uscita dal forno.',
-    allergens: [GLUTINE, LATTE], photo: '1574071318508-1cdbab80d002',
-    additions: AGGIUNTE_CLASSICHE
-  },
-  {
-    name: 'Bufala', price: '11.00', ingredients: 'Pomodoro, mozzarella di bufala, basilico',
-    description: 'Bufala campana aggiunta a crudo, cosi resta morbida.',
-    allergens: [GLUTINE, LATTE], photo: '1571066811602-716837d681de',
-    additions: [{ name: 'Prosciutto crudo', price: '2.5' }, { name: 'Rucola', price: '1' }]
-  },
-  {
-    name: 'Diavola', price: '10.00', ingredients: 'Pomodoro, fiordilatte, salame piccante',
-    description: 'Salame piccante di Calabria, per chi vuole sentire il fuoco.',
-    allergens: [GLUTINE, LATTE], photo: '1534308983496-4fabb1a015ee',
-    additions: [{ name: 'Nduja', price: '2.5' }, { name: 'Cipolla', price: '1' }, ...AGGIUNTE_CLASSICHE.slice(3)]
-  },
-  {
-    name: 'Capricciosa', price: '12.00', ingredients: 'Pomodoro, fiordilatte, prosciutto cotto, funghi, carciofi, olive',
-    description: 'Tutto quello che ci sta, messo bene.',
-    allergens: [GLUTINE, LATTE], photo: '1604382354936-07c5d9983bd3',
-    additions: [{ name: 'Uovo', price: '1.5' }]
-  },
-  {
-    name: 'Quattro Formaggi', price: '12.00', ingredients: 'Fiordilatte, gorgonzola, taleggio, parmigiano',
-    description: 'Quattro formaggi veri, niente crema pronta.',
-    allergens: [GLUTINE, LATTE], photo: '1593504049359-74330189a345',
-    additions: [{ name: 'Noci', price: '1.5' }, { name: 'Pere', price: '1.5' }]
-  },
-  {
-    name: 'Napoli', price: '10.50', ingredients: 'Pomodoro, fiordilatte, acciughe, capperi, origano',
-    description: 'Acciughe del Cantabrico e capperi di Pantelleria.',
-    allergens: [GLUTINE, LATTE, PESCE], photo: '1594007654729-407eedc4be65',
-    additions: [{ name: 'Olive taggiasche', price: '1.5' }]
-  },
-  {
-    name: 'Ortolana', price: '11.00', ingredients: 'Pomodoro, fiordilatte, melanzane, zucchine, peperoni',
-    description: 'Verdure grigliate al momento, mai sott olio.',
-    allergens: [GLUTINE, LATTE], photo: '1565299624946-b28f40a0ae38',
-    additions: [{ name: 'Fiori di zucca', price: '2' }]
-  },
-  {
-    name: 'Boscaiola', price: '12.50', ingredients: 'Fiordilatte, salsiccia, funghi porcini',
-    description: 'Bianca, con salsiccia sbriciolata a mano e porcini.',
-    allergens: [GLUTINE, LATTE], photo: '1613564834361-9436948817d1',
-    additions: [{ name: 'Provola affumicata', price: '2' }]
-  },
-  {
-    name: 'Crudo e Burrata', price: '14.00', ingredients: 'Pomodorini, burrata, prosciutto crudo, rucola',
-    description: 'Fuori dal forno si aggiunge tutto a crudo: burrata, crudo e rucola.',
-    allergens: [GLUTINE, LATTE], photo: '1593560708920-61dd98c46a4e',
-    additions: [{ name: 'Pistacchi', price: '2' }]
-  },
-  {
-    name: 'Tonno e Cipolla', price: '11.50', ingredients: 'Pomodoro, fiordilatte, tonno, cipolla di Tropea',
-    description: 'Cipolla rossa dolce, tonno a pezzi interi.',
-    allergens: [GLUTINE, LATTE, PESCE], photo: '1513104890138-7c749659a591',
-    additions: [{ name: 'Olive nere', price: '1' }]
-  },
-  {
-    name: 'Vegetariana', price: '11.00', ingredients: 'Pomodorini, spinaci, ricotta, olio evo',
-    description: 'Senza carne e senza pesce, con ricotta fresca.',
-    allergens: [GLUTINE, LATTE], photo: '1555072956-7758afb20e8f',
-    additions: [{ name: 'Pomodorini gialli', price: '1.5' }]
-  }
-];
+const foto = id => (String(id).startsWith('http')
+  ? id
+  : `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=800&q=62`);
 
-const BIBITE = [
-  { name: 'Acqua naturale', price: '2.00', description: 'Bottiglia da mezzo litro.', ingredients: '', allergens: [], photo: '1638688569176-5b6db19f9d2a' },
-  { name: 'Acqua frizzante', price: '2.00', description: 'Bottiglia da mezzo litro.', ingredients: '', allergens: [], photo: '1638688569176-5b6db19f9d2a' },
-  { name: 'Coca-Cola', price: '3.00', description: 'Bottiglia di vetro da 33 cl.', ingredients: '', allergens: [], photo: '1667450673236-62126ce038a8' },
-  { name: 'Coca-Cola Zero', price: '3.00', description: 'Bottiglia di vetro da 33 cl.', ingredients: '', allergens: [], photo: '1534260164206-2a3a4a72891d' },
-  { name: 'Fanta', price: '3.00', description: 'Bottiglia di vetro da 33 cl.', ingredients: '', allergens: [], photo: '1606411324897-1cfa6b9336e7' },
-  { name: 'Sprite', price: '3.00', description: 'Bottiglia di vetro da 33 cl.', ingredients: '', allergens: [], photo: '1597906336500-757b42d34427' },
-  { name: 'Birra chiara', price: '5.00', description: 'Spina da 0,4 litri.', ingredients: '', allergens: [GLUTINE, SOLFITI], photo: '1601912414323-0debc2271e40' },
-  { name: 'Birra artigianale IPA', price: '6.00', description: 'Bottiglia da 33 cl, birrificio di Milano.', ingredients: '', allergens: [GLUTINE, SOLFITI], photo: '1558642891-54be180ea339' }
-];
+const carta = JSON.parse(readFileSync(new URL('./menu.json', import.meta.url), 'utf8'));
+const MENU = carta.pizze ?? [];
+const BIBITE = carta.bibite ?? [];
 
 async function api(path, { method = 'POST', body, token } = {}) {
-  const response = await fetch(`${URL}${path}`, {
+  const response = await fetch(`${BASE}${path}`, {
     method,
     headers: {
       apikey: KEY,
@@ -148,7 +72,9 @@ function payload(product, tipo, posizione, esistenti) {
         // Il nome di una pizza e' un nome proprio e resta com'e'; quello di una
         // bibita si traduce.
         name: tipo === 'drink' ? translateToEnglish(product.name) : product.name,
-        description: translateToEnglish(product.description ?? '')
+        // Una frase intera il vocabolario non la sa tradurre: qui l'inglese e'
+        // scritto a mano, come lo scriverebbe la pizzeria.
+        description: product.descriptionEn ?? ''
       }
     },
     ingredients: [
@@ -159,7 +85,7 @@ function payload(product, tipo, posizione, esistenti) {
         addition_price_cents: Math.round(Number(addition.price) * 100), max_quantity: 2
       }))
     ].map((row, index) => ({ ...row, sort_order: index })),
-    allergen_ids: product.allergens ?? []
+    allergen_ids: (product.allergens ?? []).map(allergene)
   };
 }
 
