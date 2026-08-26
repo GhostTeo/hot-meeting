@@ -145,7 +145,9 @@ function payload(product, tipo, posizione, esistenti) {
     translations: {
       it: { name: product.name, description: product.description ?? '' },
       en: {
-        name: translateToEnglish(product.name),
+        // Il nome di una pizza e' un nome proprio e resta com'e'; quello di una
+        // bibita si traduce.
+        name: tipo === 'drink' ? translateToEnglish(product.name) : product.name,
         description: translateToEnglish(product.description ?? '')
       }
     },

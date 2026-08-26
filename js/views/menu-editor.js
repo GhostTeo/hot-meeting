@@ -58,7 +58,10 @@ export function menuProductPayload(draft = {}) {
   const nome = String(draft.name ?? '').trim();
   const descrizione = String(draft.description ?? '').trim();
   const translations = { it: { name: nome, description: descrizione } };
-  const nomeEn = translateToEnglish(nome);
+  // Il nome di una pizza e' un nome proprio: «Bufala» sul menu inglese resta
+  // «Bufala», non diventa «Buffalo mozzarella». Una bibita invece si traduce,
+  // perche' «Acqua naturale» a un inglese non dice niente.
+  const nomeEn = (draft.type ?? 'pizza') === 'drink' ? translateToEnglish(nome) : nome;
   if (nomeEn) translations.en = { name: nomeEn, description: translateToEnglish(descrizione) };
 
   const payload = {

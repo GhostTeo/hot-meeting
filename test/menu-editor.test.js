@@ -56,6 +56,17 @@ test('l inglese lo mette il programma, non chi scrive il menu', () => {
   assert.equal('image_url' in payload, false);
 });
 
+test('il nome di una pizza non si traduce, quello di una bibita si', () => {
+  // «Bufala» e' il nome della pizza, non l'elenco degli ingredienti: tradotto
+  // diventerebbe «Buffalo mozzarella» sul menu inglese.
+  const pizza = menuProductPayload({ type: 'pizza', name: 'Bufala', price: '11', ingredients: 'Pomodoro, mozzarella di bufala' });
+  const bibita = menuProductPayload({ type: 'drink', name: 'Acqua naturale', price: '2', ingredients: '' });
+
+  assert.equal(pizza.translations.en.name, 'Bufala');
+  assert.equal(pizza.ingredients[1].name_en, 'buffalo mozzarella');
+  assert.equal(bibita.translations.en.name, 'Still water');
+});
+
 test('una riga di ingredienti vuota non diventa un ingrediente senza nome', () => {
   const payload = menuProductPayload({
     name: 'Marinara', price: '7', ingredients: 'Pomodoro, , aglio,',
