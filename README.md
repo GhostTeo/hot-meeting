@@ -13,7 +13,7 @@ Il sito e' servito da GitHub Pages a partire dal branch `main`: ogni push su
 
 - Cliente: menu in italiano o inglese, personalizzazione pizza con ingredienti e aggiunte, allergeni, note, carrello, checkout e recap dell'ordine.
 - Creator: calendario, apertura e chiusura turni, ordini presi al telefono, storico con modifica ordine, menu, forno e report.
-- Cucina: comande operative con timer, ritardo in evidenza, stampa e stato pronto.
+- Cucina: banco delle comande, ordinato per scadenza, con numero grande, orario, minuti promessi, ritardo in evidenza, stampa, avviso al cliente e i due stati pronto e consegnato.
 
 Creator e Cucina sono la stessa area riservata: le comande portano nome e
 telefono di chi ordina, quindi la Cucina chiede l'accesso come il Creator.
@@ -111,11 +111,14 @@ npm run test:db
 
 ## Menu
 
-Il menu si modifica in qualsiasi momento dal pannello Creator: creare un
-prodotto, rinominarlo in italiano e inglese, cambiarne descrizione, prezzo,
-tipo, posizione e disponibilita', definire gli ingredienti inclusi, le aggiunte
-con prezzo e quantita' massima, e dichiarare gli allergeni fra i 14 dell'elenco
-UE.
+Il menu si modifica in qualsiasi momento dal pannello Creator, in una lingua
+sola e in pochi campi: nome, prezzo, ingredienti scritti su una riga separati da
+virgole, descrizione, foto, aggiunte a pagamento, allergeni fra i 14 dell'elenco
+UE, tipo e disponibilita'. L'ordine in cui si scrivono gli ingredienti e' quello
+in cui si leggono sul menu.
+
+`supabase/seed-menu.mjs` carica una carta dimostrativa (dodici pizze e otto
+bibite con foto segnaposto) passando dalle stesse funzioni del pannello.
 
 Tutto passa da una sola operazione sul database, quindi non esiste un momento in
 cui una pizza ha gia' i nuovi ingredienti ma ancora il vecchio prezzo. Un
@@ -125,6 +128,11 @@ invece di essere cancellato, perche' cancellarlo riscriverebbe ordini passati.
 Un limite da conoscere: il prezzo di un'aggiunta appartiene all'ingrediente, non
 alla singola pizza. Cambiare il prezzo delle olive come aggiunta lo cambia su
 tutte le pizze che le offrono.
+
+L'inglese non si scrive a mano: lo mette un vocabolario di cucina
+(`js/translate-menu.js`). Non e' un traduttore automatico ed e' voluto, perche'
+un traduttore generico farebbe della Diavola una «Devil»; cio' che il
+vocabolario non conosce resta in italiano invece di essere inventato.
 
 Ogni piatto puo' avere una **foto**, caricata dall'editor o indicata con un
 indirizzo `https`. Le immagini stanno in un archivio pubblico in lettura e
@@ -172,8 +180,9 @@ fiscale non ci sono ancora: `docs/stampanti.md` spiega perche' e cosa serve.
 
 Gli avvisi al cliente non partono da soli: mandare un SMS senza che nessuno
 tocchi il telefono richiede un operatore esterno a pagamento con le sue
-credenziali. Cucina e Ordini offrono i messaggi gia' scritti (ricevuto, pronto,
-in ritardo) e aprono SMS o WhatsApp con il testo pronto: un tocco e parte.
+credenziali. C'e' un messaggio solo e dice una cosa sola, fra quanto e' pronto,
+con gli stessi minuti che la cucina ha davanti; il bottone apre SMS o WhatsApp
+col testo gia' scritto.
 
 L'ordine preso al banco senza numero di telefono non e' possibile: il database
 chiede un numero italiano valido, perche' e' con quello che si avvisa.

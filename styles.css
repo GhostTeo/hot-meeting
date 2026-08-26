@@ -279,11 +279,19 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 
 .dish-ingredients {
   margin: 0;
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: 15px;
+  font-size: 14.5px;
   line-height: 1.45;
   color: var(--ink-soft);
+}
+
+.dish-desc {
+  margin: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  opacity: .85;
 }
 
 .dish-foot {
@@ -418,6 +426,87 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 
 /* ---------- Servizio e cucina ---------- */
 
+/* ---------- Banco della cucina ----------
+   Si legge da un metro di distanza, con le mani in pasta: numero enorme,
+   scadenza a destra, cosa preparare in mezzo. */
+
+.kt-top { margin-bottom: 20px }
+.kt-top h1 { margin-bottom: 4px }
+.kt-top p { margin: 0; color: var(--ink-soft) }
+.kt-section { margin: 34px 0 14px; font-size: 22px }
+.kt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 16px }
+
+.kt {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--basil);
+  border-radius: var(--radius);
+  padding: 16px 18px 18px;
+  box-shadow: var(--shadow);
+}
+
+.kt.late { border-left-color: var(--accent); background: var(--accent-wash) }
+
+.kt-head { display: flex; align-items: baseline; gap: 12px }
+
+.kt-number {
+  font-family: var(--serif);
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.kt-times { display: grid; gap: 2px; font-size: 12px; color: var(--ink-soft); line-height: 1.35 }
+
+.kt-left {
+  margin-left: auto;
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kt-left.late { color: var(--accent) }
+.kt-who { margin: 10px 0 12px; font-weight: 650; font-size: 15px }
+.kt-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px }
+
+.kt-items li {
+  font-size: 16.5px;
+  line-height: 1.35;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--line);
+}
+
+.kt-items li:last-child { border-bottom: 0; padding-bottom: 0 }
+.kt-items b { font-family: var(--serif); font-size: 19px }
+.kt-change, .kt-note { display: block; font-size: 13.5px; margin-top: 3px }
+.kt-change { color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em }
+.kt-note { color: var(--accent-dark); font-style: italic }
+
+.kt-note.alert {
+  font-style: normal;
+  font-weight: 800;
+  background: #fdf0d4;
+  padding: 5px 9px;
+  border-radius: 8px;
+}
+
+.kt-actions { display: flex; gap: 8px; margin-top: 14px }
+.kt-actions .btn { flex: 1; padding: 14px; font-size: 15px }
+.kt-actions .btn.secondary { flex: 0 0 auto }
+
+.kt-notify {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.kt-notify span { flex: 1; font-size: 12.5px; color: var(--ink-soft) }
+.kt-notify .btn { padding: 7px 12px; font-size: 12px; text-decoration: none; color: var(--ink) }
+
 .notify { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 6px }
 .notify-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
 .notify-line span { flex: 1; font-size: 13px; color: var(--ink-soft); min-width: 120px }
@@ -519,6 +608,13 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 
 /* ---------- Editor del menu ---------- */
 
+.menu-two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: center }
+.menu-select { padding: 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; background: var(--paper-card) }
+.menu-add-row { display: grid; grid-template-columns: 1fr 90px auto; gap: 8px; align-items: center; margin-bottom: 8px }
+.menu-add-row input { padding: 11px; border: 1px solid var(--line); border-radius: 10px; font: inherit; min-width: 0 }
+.menu-card .price { font-size: 20px; margin: 2px 0 10px }
+.menu-card h2 { font-size: 21px; margin-bottom: 4px }
+.menu-card p { margin: 0 0 6px; color: var(--ink-soft); font-size: 14px }
 .menu-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; align-items: center }
 .menu-row input { padding: 10px; border: 1px solid var(--line); border-radius: 10px; font: inherit; min-width: 0 }
 .menu-check { display: flex; gap: 8px; align-items: center; font-weight: 600; font-size: 13px; margin: 8px 0 }
