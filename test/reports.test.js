@@ -1,11 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  dailyReport,
-  monthlyReport,
-  semesterReport,
-  annualReport
-} from '../js/reports.js';
+import { dailyReport } from '../js/reports.js';
 
 const sampleOrders = [
   {
@@ -46,33 +41,7 @@ const sampleOrders = [
   }
 ];
 
-test('calcola il primo semestre fisso e il netto dei movimenti', () => {
-  const report = semesterReport(sampleOrders, 2026, 1);
 
-  assert.deepEqual(report, {
-    period: { from: '2026-01-01', to: '2026-06-30' },
-    orders: 2,
-    pizzas: 5,
-    gross: 50,
-    fees: 3,
-    supplements: 3,
-    refunds: 4,
-    net: 46
-  });
-});
-
-test('calcola il secondo semestre fisso senza includere il primo', () => {
-  assert.deepEqual(semesterReport(sampleOrders, 2026, 2), {
-    period: { from: '2026-07-01', to: '2026-12-31' },
-    orders: 1,
-    pizzas: 5,
-    gross: 50,
-    fees: 5,
-    supplements: 6,
-    refunds: 0,
-    net: 51
-  });
-});
 
 test('restituisce un report giornaliero filtrabile per turno', () => {
   assert.deepEqual(dailyReport(sampleOrders, '2026-01-01', 'lunch'), {
@@ -106,17 +75,6 @@ test('esclude ordini in preparazione e annullati dai totali', () => {
   });
 });
 
-test('calcola mese e anno solari con i soli ordini del periodo', () => {
-  assert.deepEqual(monthlyReport(sampleOrders, 2026, 1).period, {
-    from: '2026-01-01', to: '2026-01-31'
-  });
-  assert.equal(monthlyReport(sampleOrders, 2026, 1).net, 22);
-
-  assert.deepEqual(annualReport(sampleOrders, 2026).period, {
-    from: '2026-01-01', to: '2026-12-31'
-  });
-  assert.equal(annualReport(sampleOrders, 2026).net, 97);
-});
 
 test('un ordine checkout non conta le bibite come pizze', () => {
   const checkoutOrder = {

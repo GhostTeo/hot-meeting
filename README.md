@@ -62,6 +62,42 @@ Aprire `http://localhost:4173`. L'accesso Creator usa l'utente Supabase
 configurato. Le credenziali dimostrative `creator` / `pizza143` valgono
 soltanto quando `js/config.js` e' in `mode: 'local'`.
 
+## Sicurezza
+
+Le prove sono state fatte contro il database vero, con la sola chiave pubblica.
+Uno sconosciuto **non** puo': leggere ordini, telefoni, incassi, eventi, giornate
+o calendario; cambiare un prezzo; creare o modificare prodotti; aprire o chiudere
+un servizio; toccare lo stato di un ordine; registrare incassi; scrivere eventi.
+Ogni tentativo viene respinto dalle policy RLS o dal controllo di ruolo dentro le
+funzioni, e spesso da entrambi.
+
+L'unica cosa che puo' fare e' quella per cui esiste il sito: creare un ordine.
+Anche li' decide il server: il prezzo lo ricalcola dal listino (il totale
+dichiarato dal client viene rifiutato come chiave sconosciuta), le quantita'
+stanno fra 1 e 20, il payload non supera 32 KB, il metodo di pagamento deve
+essere fra quelli previsti, e prodotto e servizio devono esistere ed essere
+aperti.
+
+Contro l'inondazione ci sono due tetti: cinque ordini ogni dieci minuti per
+numero di telefono, e dieci ordini al minuto per servizio. Il secondo e' stato
+aggiunto dopo aver verificato che cambiando numero a ogni ordine si riusciva a
+riempire la cucina di comande finte.
+
+Il testo di chi ordina non viene mai eseguito: un nome come
+`<img src=x onerror=...>` compare come testo in ordini, cucina, scheda e storico.
+In piu' il database ora rifiuta i nomi che non sono nomi.
+
+Nel repository non ci sono segreti. La chiave nel codice e' quella pubblica, che
+per progetto sta nel browser: la protezione sono le policy, non la chiave. La
+pagina dichiara una Content Security Policy che impedisce l'esecuzione di script
+estranei anche se qualcuno riuscisse a infilarli.
+
+**Cosa resta scoperto, detto chiaro:** GitHub Pages non lascia impostare gli
+header di sicurezza (c'e' solo HSTS, che mette lui). Non c'e' niente davanti al
+sito che possa filtrare il traffico prima che arrivi al database. E l'accesso
+Creator e' una sola coppia email/password senza secondo fattore: chi la ottiene
+entra.
+
 ## Persistenza
 
 L'app e' collegata a un progetto Supabase reale: menu, giornate operative,

@@ -125,7 +125,3 @@ export function phoneProblem(value = '') {
   if (tutte.length > 15) return 'Il numero ha una cifra di troppo: controllalo.';
   return null;
 }
-
-export function isValidPhoneNumber(value) {
-  return phoneProblem(value) === null;
-}

@@ -27,9 +27,3 @@ export function readyInMinutes({
   const batches = Math.ceil(position / Math.max(1, slots));
   return batches * Math.max(1, bakeMinutes) + Math.max(0, bufferMinutes);
 }
-
-// Testo mostrato al cliente: una forbice, perche' un minuto esatto non e' una
-// promessa che una cucina possa mantenere.
-export function waitWindow(minutes) {
-  return { from: minutes, to: minutes + 5 };
-}

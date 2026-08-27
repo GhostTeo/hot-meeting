@@ -7,6 +7,13 @@
   <meta name="description" content="Ordina la pizza online e ritira a Milano, Piola.">
   <meta name="theme-color" content="#faf6ef">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <!-- GitHub Pages non lascia impostare gli header, ma queste due regole si
+       possono dichiarare qui. La prima dice al browser da dove puo' caricare
+       roba: se qualcuno riuscisse a infilare uno script nella pagina, non
+       partirebbe comunque. La seconda evita di raccontare in giro da quale
+       pagina arriva chi clicca. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://nzoqtfbvyhemclwmwyah.supabase.co wss://nzoqtfbvyhemclwmwyah.supabase.co; base-uri 'self'; form-action 'none'; object-src 'none'">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <!-- Si apre la strada verso i tre indirizzi che servono subito: cosi' dati e
        foto partono senza aspettare la stretta di mano. -->
   <link rel="preconnect" href="https://nzoqtfbvyhemclwmwyah.supabase.co" crossorigin>

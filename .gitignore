@@ -3,3 +3,9 @@ node_modules/
 coverage/
 *.log
 .worktrees/
+
+# Segreti: non devono finire nel repository nemmeno per sbaglio
+.env
+.env.*
+*.key
+*.pem
