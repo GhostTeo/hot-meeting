@@ -78,3 +78,25 @@ test('la comanda stampata dichiara gli allergeni di ogni riga', () => {
     { kind: 'allergens', text: 'ALLERGENI: Glutine, Pesce' }
   ]);
 });
+
+test('le bibite stanno sulla comanda ma in fondo, staccate da cio che va in forno', () => {
+  const ticket = buildKitchenTicket({
+    sequence: 5,
+    items: [
+      { quantity: 2, name: 'Margherita' },
+      { quantity: 3, name: 'Coca-Cola' },
+      { quantity: 1, name: 'Diavola' }
+    ]
+  }, { isDrink: item => /cola|acqua|birra/i.test(item.name) });
+
+  const testo = ticket.map(row => row.text);
+  assert.ok(testo.indexOf('1x DIAVOLA') < testo.indexOf('AL BANCO'));
+  assert.ok(testo.indexOf('AL BANCO') < testo.indexOf('3x COCA-COLA'));
+  assert.deepEqual(ticket.filter(row => row.kind === 'section').map(row => row.text), ['AL BANCO']);
+});
+
+test('senza bibite non compare nessuna sezione al banco', () => {
+  const ticket = buildKitchenTicket({ sequence: 5, items: [{ quantity: 1, name: 'Margherita' }] });
+
+  assert.deepEqual(ticket.filter(row => row.kind === 'section'), []);
+});

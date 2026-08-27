@@ -25,12 +25,19 @@ function escapeHtml(value = '') {
 
 function riga(row) {
   if (row.kind === 'separator') return `<div>${'-'.repeat(42)}</div>`;
+  if (row.kind === 'section') return `<div class="ticket-section">${escapeHtml(row.text)}</div>`;
   const classe = row.kind === 'number' ? ' class="ticket-number"' : row.alert ? ' class="ticket-alert"' : '';
   return `<div${classe}>${escapeHtml(row.text)}</div>`;
 }
 
-export function printMarkup(orders = []) {
+export function printMarkup(orders = [], options = {}) {
   return orders
-    .map(order => `<div class="ticket-page">${buildKitchenTicket(order).map(riga).join('')}</div>`)
+    .map(order => `<div class="ticket-page">${buildKitchenTicket(order, options).map(riga).join('')}</div>`)
     .join('');
+}
+
+// Il riepilogo di cassa esce dalla stessa stampante e con lo stesso codice:
+// sono righe con la stessa forma, cambia solo cosa dicono.
+export function linesMarkup(lines = []) {
+  return `<div class="ticket-page">${lines.map(riga).join('')}</div>`;
 }

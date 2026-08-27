@@ -89,12 +89,13 @@ function ticket(order) {
       ${counter(order)}
     </header>
     <p class="kt-who">${escapeHtml(order.customer ?? 'Cliente')}${order.source ? ` · ${escapeHtml(String(order.source).toLowerCase() === 'web' ? 'dal sito' : 'in pizzeria')}` : ''}</p>
-    <ul class="kt-items">${(order.items ?? []).map(itemLine).join('')}</ul>
+    <ul class="kt-items">${(order.items ?? []).filter(item => !order.__isDrink?.(item)).map(itemLine).join('')}</ul>
+    ${(order.items ?? []).some(item => order.__isDrink?.(item)) ? `<div class="kt-bar"><span>Al banco</span><ul class="kt-items">${(order.items ?? []).filter(item => order.__isDrink?.(item)).map(itemLine).join('')}</ul></div>` : ''}
   </article>`;
 }
 
-export function kitchenPanel(orders = [], now = Date.now(), autoPrint = false) {
-  const board = kitchenBoard(orders, now);
+export function kitchenPanel(orders = [], now = Date.now(), autoPrint = false, isDrink = () => false) {
+  const board = kitchenBoard(orders.map(order => ({ ...order, __isDrink: isDrink })), now);
   const inRitardo = board.preparing.filter(order => order.late).length;
   return `<div class="kt-top">
       <h1>Cucina</h1>

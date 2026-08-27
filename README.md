@@ -30,7 +30,10 @@ ordini dal sito e per quelli presi al telefono: la coda del forno e' una sola.
 Chi guarda il menu non puo' leggere gli ordini altrui, quindi il numero di pizze
 in coda arriva da una vista pubblica che espone solo quel totale.
 
-Le bibite non occupano il forno e non allungano l'attesa di nessuno. I tre numeri
+Le bibite non occupano il forno e non allungano l'attesa di nessuno; sulla
+comanda ci sono lo stesso, in fondo e sotto la voce «al banco», perche' chi
+consegna deve sapere cosa mettere nel sacchetto ma chi impasta non deve cercare
+la pizza in mezzo alle lattine. I tre numeri
 del forno si cambiano dal pannello Servizio; valgono per gli ordini successivi,
 quelli gia' in coda tengono l'orario promesso.
 
@@ -170,6 +173,26 @@ telefono vibra. Il suono lo genera il browser, non e' un file da scaricare. I
 browser non lasciano suonare una pagina finche' non e' stata toccata almeno una
 volta: in cassa si tocca comunque, e prima di allora nessun ordine puo' essere
 arrivato.
+
+## Sala d'attesa
+
+Dopo la conferma il cliente non resta con una ricevuta muta: vede a che punto e'
+il suo ordine, e lo stato arriva dal server, non e' una barra che scorre da sola.
+Se la cucina e' in ritardo, li' si vede; quando il tempo promesso scade ma la
+pizza non e' ancora uscita, la barra si ferma appena prima della fine invece di
+dire che e' pronta.
+
+Il cliente non e' collegato e non puo' leggere gli ordini: legge solo il proprio,
+mostrando il gettone ricevuto al momento dell'invio, e ne ricava soltanto stato e
+minuti che restano.
+
+## Chiusura di cassa
+
+Da Report si stampa il riepilogo del pranzo, del serale o della giornata intera.
+I contanti si contano a parte dall'elettronico, perche' nel cassetto c'e' solo il
+primo, e i supplementi incassati dopo una modifica finiscono nel metodo con cui
+sono stati presi. Entrano solo gli ordini chiusi: quello che e' ancora in forno
+non e' incasso.
 
 ## Lingua e recap cliente
 

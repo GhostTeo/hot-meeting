@@ -432,6 +432,36 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
   box-shadow: var(--shadow);
 }
 
+/* La sala d'attesa: quello che si guarda mentre la pizza si fa. */
+.wait { text-align: center; padding: 6px 0 22px; border-bottom: 1px solid var(--line); margin-bottom: 18px }
+.wait-stage { font-size: clamp(26px, 6vw, 34px); line-height: 1.1; margin: 6px 0 8px }
+.wait-hint { margin: 0 0 18px; color: var(--ink-soft) }
+
+.wait-bar {
+  height: 10px;
+  border-radius: 99px;
+  background: var(--paper-warm);
+  overflow: hidden;
+}
+
+.wait-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--gold), var(--accent));
+  transition: width .8s ease;
+}
+
+.wait-left { margin: 14px 0 0; font-size: 15px }
+.wait-left b { font-family: var(--serif); font-size: 22px }
+.wait-live { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-soft) }
+
+/* Pronta: il colore cambia, si vede dall altra parte della stanza. */
+.wait.ready .wait-stage { color: var(--basil) }
+.wait.ready .wait-bar span { background: var(--basil) }
+.wait.collected .wait-bar span { background: var(--ink-soft) }
+
+.receipt-h { font-size: 17px; margin: 0 0 4px; color: var(--ink-soft) }
 .receipt-code { font-family: var(--serif); font-size: 42px; font-weight: 700; margin: 6px 0 16px }
 .receipt-item { padding: 11px 0; border-bottom: 1px solid var(--line) }
 .receipt-note { color: var(--accent); font-weight: 700 }
@@ -549,6 +579,24 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 
 .kt-allergens::before { content: "allergeni · " }
 
+/* Le bibite non vanno in forno: stanno sulla comanda ma staccate, cosi' chi
+   impasta non le legge come lavoro suo. */
+.kt-bar {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.kt-bar > span {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+
 .kt-actions { display: flex; gap: 8px; margin-top: 14px }
 .kt-actions .btn { flex: 1; padding: 14px; font-size: 15px }
 .kt-actions .btn.secondary { flex: 0 0 auto }
@@ -654,6 +702,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .confirm-facts dd { margin: 0; font-weight: 650; text-align: right }
 .confirm-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px }
 .confirm-actions .btn { padding: 15px; font-size: 15.5px }
+.confirm-demo { margin: 10px 0 0; font-size: 12px; color: var(--ink-soft); text-align: center }
 
 /* ---------- Ordini da fare ---------- */
 
@@ -907,6 +956,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 
   #print-area .ticket-number { font-size: 34px; font-weight: 800; margin-bottom: 4px }
   #print-area .ticket-alert { font-weight: 800; text-decoration: underline }
+  #print-area .ticket-section { margin: 10px 0 4px; font-weight: 800; border-top: 1px dashed #000; padding-top: 6px }
   /* Due ordini insieme sono due comande, non un foglio solo. */
   #print-area .ticket-page { break-after: page; page-break-after: always }
   #print-area .ticket-page:last-child { break-after: auto; page-break-after: auto }

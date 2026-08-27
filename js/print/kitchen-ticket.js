@@ -14,6 +14,7 @@
 //   change     una modifica del piatto (senza / aggiunta)
 //   note       una richiesta scritta dal cliente; alert:true se parla di allergie
 //   allergens  gli allergeni dichiarati per quel piatto
+//   section    uno stacco fra cio' che va in forno e cio' che si prende al banco
 //   footer     come si paga
 
 import { allergenShortNames } from '../allergens.js';
@@ -29,7 +30,10 @@ function orderNumber(order) {
   return order.sequence ? `#${String(order.sequence).padStart(2, '0')}` : `#${order.id ?? ''}`;
 }
 
-export function buildKitchenTicket(order = {}) {
+// Le bibite stanno sulla comanda, perche' chi consegna deve sapere cosa mettere
+// nel sacchetto, ma in fondo e staccate: chi impasta non deve cercare la pizza
+// in mezzo alle lattine.
+export function buildKitchenTicket(order = {}, { isDrink = () => false } = {}) {
   const rows = [{ kind: 'number', text: orderNumber(order) }];
 
   const chi = [String(order.source ?? '').toUpperCase(), order.customer].filter(Boolean).join(' · ');
@@ -43,7 +47,12 @@ export function buildKitchenTicket(order = {}) {
 
   rows.push({ kind: 'separator', text: '' });
 
-  for (const item of order.items ?? []) {
+  const righe = order.items ?? [];
+  const forno = righe.filter(item => !isDrink(item));
+  const banco = righe.filter(item => isDrink(item));
+
+  for (const item of [...forno, ...banco]) {
+    if (banco.length && item === banco[0]) rows.push({ kind: 'section', text: 'AL BANCO' });
     rows.push({ kind: 'item', text: `${item.quantity ?? 1}x ${String(item.name ?? '').toUpperCase()}` });
     for (const tolto of item.removed ?? []) {
       rows.push({ kind: 'change', text: `SENZA ${tolto}` });
@@ -82,6 +91,10 @@ function wrap(text, width) {
 // e a stampare da un browser qualunque finche' non arriva quella vera.
 export function ticketToText(rows = [], width = 42) {
   return rows
-    .map(row => (row.kind === 'separator' ? '-'.repeat(width) : wrap(row.text, width).join('\n')))
+    .map(row => {
+      if (row.kind === 'separator') return '-'.repeat(width);
+      if (row.kind === 'section') return `\n-- ${row.text} --`;
+      return wrap(row.text, width).join('\n');
+    })
     .join('\n');
 }

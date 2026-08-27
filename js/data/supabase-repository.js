@@ -481,6 +481,20 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       return throwIfError(result);
     },
 
+    async getOrderProgress(orderId, requestToken) {
+      const result = await client.rpc('public_order_progress', {
+        p_order_id: orderId,
+        p_request_token: requestToken
+      });
+      if (result.error || !result.data) return null;
+      return {
+        status: result.data.status,
+        sequence: result.data.sequence,
+        minutesLeft: Number(result.data.minutes_left ?? 0),
+        promisedMinutes: Number(result.data.promised_minutes ?? 0)
+      };
+    },
+
     async setServiceOven(serviceId, oven) {
       const result = await client.rpc('set_service_oven', {
         p_service_id: serviceId,

@@ -108,6 +108,16 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       emit('calendar');
     },
 
+    async getOrderProgress(orderId) {
+      const order = (state.orders ?? []).find(entry => String(entry.id) === String(orderId));
+      if (!order) return null;
+      const restano = order.readyAt ? Math.max(0, Math.ceil((order.readyAt - Date.now()) / 60000)) : 0;
+      const promessi = order.readyAt && order.createdAt
+        ? Math.round((order.readyAt - order.createdAt) / 60000)
+        : 0;
+      return { status: order.status, sequence: order.sequence, minutesLeft: restano, promisedMinutes: promessi };
+    },
+
     async setServiceOven(serviceId, oven) {
       const entry = Object.values(state.services).find(service => service?.id === serviceId);
       if (!entry) throw new Error(`Servizio ${serviceId} non trovato`);

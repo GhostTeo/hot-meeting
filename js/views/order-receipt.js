@@ -4,6 +4,7 @@
 
 import { translate, translatePaymentMethod, translateProduct } from '../i18n.js';
 import { allergenNames } from '../allergens.js';
+import { waitingStage } from './waiting-room.js';
 
 export function buildPublicOrderCode(businessDate, sequence) {
   const [, month, day] = String(businessDate ?? '').split('-');
@@ -34,6 +35,7 @@ export function buildCustomerRecap(order, { locale = 'it', pizzeriaPhone = null 
     : null;
   return {
     id: order.id,
+    token: order.requestToken ?? null,
     code: buildPublicOrderCode(order.businessDate, order.sequence),
     customer: order.customer ?? '',
     phone: order.phone ?? '',
@@ -52,12 +54,32 @@ function escapeHtml(value = '') {
   })[character]);
 }
 
-export function orderReceiptPanel(recap, locale = 'it', money = value => `${value}`) {
+// La sala d'attesa: quello che il cliente guarda mentre la pizza si fa. Lo
+// stato arriva dal server, quindi se la cucina e' in ritardo qui si vede: una
+// barra che scorre da sola sarebbe una bugia gentile.
+function waitingBoard(recap, progress, locale, t) {
+  const stage = waitingStage({
+    status: progress?.status ?? 'preparing',
+    minutesLeft: progress?.minutesLeft ?? recap.minutes,
+    promisedMinutes: progress?.promisedMinutes ?? recap.minutes
+  });
+  const restano = progress?.minutesLeft ?? recap.minutes;
+  return `<div class="wait ${stage.key}">
+    <span class="eyebrow">${t('wait.title')}</span>
+    <h1 class="wait-stage">${escapeHtml(stage[locale === 'en' ? 'en' : 'it'])}</h1>
+    <p class="wait-hint">${escapeHtml(stage.hint[locale === 'en' ? 'en' : 'it'])}</p>
+    <div class="wait-bar"><span style="width:${stage.progress}%"></span></div>
+    ${stage.key === 'ready' || stage.key === 'collected' ? '' : `<p class="wait-left">${t('wait.left')} <b>${restano > 0 ? `${restano} ${t('wait.minutes')}` : t('wait.now')}</b></p>`}
+    <p class="wait-live">${t('wait.live')}</p>
+  </div>`;
+}
+
+export function orderReceiptPanel(recap, locale = 'it', money = value => `${value}`, progress = null) {
   const t = key => escapeHtml(translate(key, locale));
   return `<section class="receipt card">
-    <span class="eyebrow">${t('recap.title')}</span>
+    ${waitingBoard(recap, progress, locale, t)}
     <div class="receipt-code">${escapeHtml(recap.code)}</div>
-    ${recap.minutes === null ? '' : `<p>${t('recap.ready')} <b>${recap.minutes} ${t('status.minutes')}</b></p>`}
+    <h2 class="receipt-h">${t('wait.order')}</h2>
     ${recap.items.map(item => `<div class="receipt-item">
       <b>${item.quantity}× ${escapeHtml(item.name)}</b>
       ${item.removed.length ? `<br><small>${t('cart.without')}: ${escapeHtml(item.removed.join(', '))}</small>` : ''}
