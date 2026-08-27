@@ -4,7 +4,7 @@
 
 import { translate, translatePaymentMethod, translateProduct } from '../i18n.js';
 import { allergenNames } from '../allergens.js';
-import { waitingStage } from './waiting-room.js';
+import { countdownText, waitingProgress, waitingStage } from './waiting-room.js';
 
 export function buildPublicOrderCode(businessDate, sequence) {
   const [, month, day] = String(businessDate ?? '').split('-');
@@ -36,6 +36,9 @@ export function buildCustomerRecap(order, { locale = 'it', pizzeriaPhone = null 
   return {
     id: order.id,
     token: order.requestToken ?? null,
+    // L'orario assoluto: da qui il conto alla rovescia scorre da solo, senza
+    // aspettare che il server richiami.
+    readyAt: order.readyAt ?? null,
     code: buildPublicOrderCode(order.businessDate, order.sequence),
     customer: order.customer ?? '',
     phone: order.phone ?? '',
@@ -57,19 +60,23 @@ function escapeHtml(value = '') {
 // La sala d'attesa: quello che il cliente guarda mentre la pizza si fa. Lo
 // stato arriva dal server, quindi se la cucina e' in ritardo qui si vede: una
 // barra che scorre da sola sarebbe una bugia gentile.
-function waitingBoard(recap, progress, locale, t) {
+function waitingBoard(recap, progress, locale, t, now = Date.now()) {
+  const stato = progress?.status ?? 'preparing';
+  const mancano = recap.readyAt ? Number(recap.readyAt) - now : (recap.minutes ?? 0) * 60000;
+  const promessi = (progress?.promisedMinutes ?? recap.minutes ?? 0) * 60000;
   const stage = waitingStage({
-    status: progress?.status ?? 'preparing',
-    minutesLeft: progress?.minutesLeft ?? recap.minutes,
+    status: stato,
+    minutesLeft: Math.ceil(Math.max(0, mancano) / 60000),
     promisedMinutes: progress?.promisedMinutes ?? recap.minutes
   });
-  const restano = progress?.minutesLeft ?? recap.minutes;
+  const finito = stage.key === 'ready' || stage.key === 'collected';
+  const larghezza = finito ? 100 : waitingProgress(mancano, promessi);
   return `<div class="wait ${stage.key}">
     <span class="eyebrow">${t('wait.title')}</span>
     <h1 class="wait-stage">${escapeHtml(stage[locale === 'en' ? 'en' : 'it'])}</h1>
     <p class="wait-hint">${escapeHtml(stage.hint[locale === 'en' ? 'en' : 'it'])}</p>
-    <div class="wait-bar"><span style="width:${stage.progress}%"></span></div>
-    ${stage.key === 'ready' || stage.key === 'collected' ? '' : `<p class="wait-left">${t('wait.left')} <b>${restano > 0 ? `${restano} ${t('wait.minutes')}` : t('wait.now')}</b></p>`}
+    <div class="wait-bar"><span id="wait-bar" style="width:${larghezza}%"></span></div>
+    ${finito ? '' : `<p class="wait-left">${t('wait.left')} <b id="wait-countdown">${mancano > 0 ? countdownText(mancano) : t('wait.now')}</b></p>`}
     <p class="wait-live">${t('wait.live')}</p>
   </div>`;
 }

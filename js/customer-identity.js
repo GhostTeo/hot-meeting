@@ -91,22 +91,38 @@ export function phoneProblem(value = '') {
   const scritto = String(value ?? '').trim();
   if (!/\d/.test(scritto)) return 'Scrivi un numero di telefono.';
 
+  const cifre = scritto.replace(/\D/g, '');
+  const internazionale = scritto.startsWith('+') || (cifre.startsWith('00') && cifre[2] !== '0');
   const normalizzato = normalizePhoneNumber(scritto);
-  const cifre = normalizzato.replace('+', '');
-  const nazionale = scritto.startsWith('+') || scritto.replace(/\D/g, '').startsWith('00')
-    ? cifre.slice(cifre.length > 11 ? 2 : 1)
-    : scritto.replace(/\D/g, '');
+  const tutte = normalizzato.replace('+', '');
+  // Il numero italiano si giudica sulle sue cifre, non su quelle col prefisso:
+  // «34670958» col +39 davanti arriva a dieci e sembrava lungo abbastanza,
+  // mentre a un cellulare italiano mancavano due cifre.
+  const italiano = !internazionale || tutte.startsWith('39');
+  const nazionale = italiano ? tutte.slice(2) : tutte;
 
-  if (cifre.length < 10) return 'Numero troppo corto: controllalo.';
-  if (cifre.length > 15) return 'Numero troppo lungo: controllalo.';
-  if (inventato(nazionale) || inventato(cifre)) return 'Questo numero non esiste: scrivi quello vero.';
+  if (inventato(nazionale) || inventato(tutte)) return 'Questo numero non esiste: scrivi quello vero.';
 
-  // Un numero italiano comincia per 3 se e' un cellulare, per 0 se e' fisso.
-  // Chi scrive altro quasi sempre ha dimenticato il proprio prefisso.
-  const senzaPrefisso = !scritto.startsWith('+') && !scritto.replace(/\D/g, '').startsWith('00');
-  if (senzaPrefisso && !/^[03]/.test(nazionale)) {
+  if (italiano) {
+    if (/^3/.test(nazionale)) {
+      if (nazionale.length < 10) return 'Al numero mancano delle cifre: un cellulare italiano ne ha dieci.';
+      if (nazionale.length > 10) return 'Il numero ha una cifra di troppo: controllalo.';
+      return null;
+    }
+    if (/^0/.test(nazionale)) {
+      if (nazionale.length < 6) return 'Al numero mancano delle cifre.';
+      if (nazionale.length > 11) return 'Il numero ha una cifra di troppo: controllalo.';
+      return null;
+    }
+    // Un numero italiano comincia per 3 se e' un cellulare, per 0 se e' fisso.
+    // Chi scrive altro quasi sempre ha dimenticato il proprio prefisso.
     return 'Se il numero non e italiano, scrivilo con il prefisso: +44, +33...';
   }
+
+  // Fuori dall'Italia le lunghezze cambiano paese per paese: si controlla che
+  // stia nei limiti internazionali, senza fingere di conoscerli tutti.
+  if (tutte.length < 10) return 'Al numero mancano delle cifre.';
+  if (tutte.length > 15) return 'Il numero ha una cifra di troppo: controllalo.';
   return null;
 }
 

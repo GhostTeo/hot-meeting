@@ -40,7 +40,8 @@ test('il turista scrive il suo prefisso e va bene lo stesso', () => {
 });
 
 test('i numeri inventati non passano, e si dice perche', () => {
-  assert.equal(phoneProblem('12345'), 'Numero troppo corto: controllalo.');
+  // 12345 e' corto e in sequenza: la seconda cosa e' quella che conta dirgli.
+  assert.equal(phoneProblem('12345'), 'Questo numero non esiste: scrivi quello vero.');
   assert.equal(phoneProblem('0000000000'), 'Questo numero non esiste: scrivi quello vero.');
   assert.equal(phoneProblem('1111111111'), 'Questo numero non esiste: scrivi quello vero.');
   assert.equal(phoneProblem('1234567890'), 'Questo numero non esiste: scrivi quello vero.');
@@ -57,4 +58,24 @@ test('un cognome cortissimo senza vocali si fa confermare, non si rifiuta', () =
   // «Ng» e' un cognome vietnamita vero; «bcdfg» e' una manata sulla tastiera.
   assert.equal(nameCheck('Ng'), 'ask');
   assert.equal(nameCheck('bcdfg'), 'no');
+});
+
+test('un cellulare italiano a cui manca una cifra viene fermato', () => {
+  // Il difetto era qui: aggiungendo +39 il numero arrivava a dieci cifre e
+  // sembrava lungo abbastanza, ma il cellulare ne vuole dieci sue.
+  assert.equal(phoneProblem('34670958'), 'Al numero mancano delle cifre: un cellulare italiano ne ha dieci.');
+  assert.equal(phoneProblem('346709583'), 'Al numero mancano delle cifre: un cellulare italiano ne ha dieci.');
+  assert.equal(phoneProblem('3467095833'), null);
+  assert.equal(phoneProblem('+39 346 709 5833'), null);
+  assert.equal(phoneProblem('34670958333'), 'Il numero ha una cifra di troppo: controllalo.');
+});
+
+test('il fisso italiano ha una lunghezza sua', () => {
+  assert.equal(phoneProblem('02 1234567'), null);
+  assert.equal(phoneProblem('0212'), 'Al numero mancano delle cifre.');
+});
+
+test('il numero straniero si giudica su quello che scrive il turista', () => {
+  assert.equal(phoneProblem('+44 7700 900123'), null);
+  assert.equal(phoneProblem('+44 77'), 'Al numero mancano delle cifre.');
 });

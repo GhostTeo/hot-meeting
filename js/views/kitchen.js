@@ -10,6 +10,7 @@
 
 import { promisedMinutes } from '../messages.js';
 import { allergenShortNames } from '../allergens.js';
+import { groupOrderItems } from '../cart-lines.js';
 
 function decorate(order, now) {
   const minutesLeft = order.readyAt ? Math.round((Number(order.readyAt) - now) / 60000) : null;
@@ -89,8 +90,8 @@ function ticket(order) {
       ${counter(order)}
     </header>
     <p class="kt-who">${escapeHtml(order.customer ?? 'Cliente')}${order.source ? ` · ${escapeHtml(String(order.source).toLowerCase() === 'web' ? 'dal sito' : 'in pizzeria')}` : ''}</p>
-    <ul class="kt-items">${(order.items ?? []).filter(item => !order.__isDrink?.(item)).map(itemLine).join('')}</ul>
-    ${(order.items ?? []).some(item => order.__isDrink?.(item)) ? `<div class="kt-bar"><span>Al banco</span><ul class="kt-items">${(order.items ?? []).filter(item => order.__isDrink?.(item)).map(itemLine).join('')}</ul></div>` : ''}
+    <ul class="kt-items">${groupOrderItems(order.items ?? []).filter(item => !order.__isDrink?.(item)).map(itemLine).join('')}</ul>
+    ${(order.items ?? []).some(item => order.__isDrink?.(item)) ? `<div class="kt-bar"><span>Al banco</span><ul class="kt-items">${groupOrderItems(order.items ?? []).filter(item => order.__isDrink?.(item)).map(itemLine).join('')}</ul></div>` : ''}
   </article>`;
 }
 
@@ -101,6 +102,7 @@ export function kitchenPanel(orders = [], now = Date.now(), autoPrint = false, i
       <h1>Cucina</h1>
       <p>${board.preparing.length} da preparare${inRitardo ? ` · <b class="warning">${inRitardo} in ritardo</b>` : ''}</p>
       <label class="kt-auto"><input type="checkbox" id="autoprint" ${autoPrint ? 'checked' : ''}> stampa la comanda appena arriva l'ordine</label>
+      ${autoPrint ? `<p class="kt-note">Il browser apre la finestra di stampa ogni volta: e' un suo limite, non si puo' togliere da qui. Sul computer della cassa si toglie avviando Chrome con <code>--kiosk-printing</code>; con la Epson collegata sparira' del tutto. Accendi questo interruttore solo sul dispositivo attaccato alla stampante.</p>` : ''}
     </div>
     ${board.preparing.length
       ? `<div class="kt-grid">${board.preparing.map(ticket).join('')}</div>

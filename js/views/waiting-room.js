@@ -17,6 +17,22 @@ const STAGES = {
   collected: { key: 'collected', it: 'Ritirato', en: 'Collected', hint: { it: 'Buon appetito.', en: 'Enjoy your meal.' } }
 };
 
+// Minuti e secondi: un conto alla rovescia che cambia una volta al minuto
+// sembra fermo, e chi aspetta pensa che si sia bloccato.
+export function countdownText(msLeft) {
+  const secondi = Math.max(0, Math.floor(Number(msLeft ?? 0) / 1000));
+  return `${Math.floor(secondi / 60)}:${String(secondi % 60).padStart(2, '0')}`;
+}
+
+// Ferma appena prima della fine finche' la cucina non dice che e' pronta: la
+// barra non deve promettere quello che il forno non ha ancora fatto.
+export function waitingProgress(msLeft, msPromised) {
+  const promessi = Number(msPromised ?? 0);
+  if (promessi <= 0) return 0;
+  const trascorso = (promessi - Math.max(0, Number(msLeft ?? 0))) / promessi;
+  return Math.min(97, Math.max(0, Math.round(trascorso * 100)));
+}
+
 export function waitingStage({ status = 'preparing', minutesLeft = null, promisedMinutes = null } = {}) {
   if (status === 'collected') return { ...STAGES.collected, progress: 100 };
   if (status === 'ready') return { ...STAGES.ready, progress: 100 };

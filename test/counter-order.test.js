@@ -36,7 +36,7 @@ test('la bozza diventa l ordine che il database si aspetta', () => {
 
 test('un ordine senza righe o senza numero non parte', () => {
   assert.deepEqual(counterOrderIssues({ ...bozza, quantities: {} }, menu), ['Aggiungi almeno un prodotto.']);
-  assert.deepEqual(counterOrderIssues({ ...bozza, phone: '123' }, menu), ['Numero troppo corto: controllalo.']);
+  assert.deepEqual(counterOrderIssues({ ...bozza, phone: '123' }, menu), ['Questo numero non esiste: scrivi quello vero.']);
   assert.deepEqual(counterOrderIssues({ ...bozza, name: '  ' }, menu), ['Scrivi il nome di chi ha ordinato.']);
   assert.deepEqual(counterOrderIssues(bozza, menu), []);
 });

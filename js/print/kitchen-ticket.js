@@ -18,6 +18,7 @@
 //   footer     come si paga
 
 import { allergenShortNames } from '../allergens.js';
+import { groupOrderItems } from '../cart-lines.js';
 
 const ALLERGY = /allerg|celiac|intoller|lattosio|glutine|noci|arachidi|crostacei/i;
 
@@ -47,7 +48,7 @@ export function buildKitchenTicket(order = {}, { isDrink = () => false } = {}) {
 
   rows.push({ kind: 'separator', text: '' });
 
-  const righe = order.items ?? [];
+  const righe = groupOrderItems(order.items ?? []);
   const forno = righe.filter(item => !isDrink(item));
   const banco = righe.filter(item => isDrink(item));
 

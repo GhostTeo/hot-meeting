@@ -10,11 +10,15 @@
 
 function firma(item = {}) {
   const tolti = (item.removed ?? []).join('|');
+  // Il nome vale quanto l'identificativo: le righe di un ordine hanno un id
+  // proprio per ognuna, quindi due acque identiche non si riconoscerebbero.
   const aggiunte = (item.additions ?? [])
     .filter(addition => Number(addition.quantity ?? 0) > 0)
     .map(addition => `${addition.name}x${addition.quantity}`)
     .join('|');
-  return [item.id, tolti, aggiunte, String(item.note ?? '').trim()].join('§');
+  // Le righe di un ordine hanno un id proprio per ognuna: due acque identiche
+  // non si riconoscerebbero mai. Si guarda il prodotto, non la riga.
+  return [item.productId ?? item.name ?? item.id, tolti, aggiunte, String(item.note ?? '').trim()].join('§');
 }
 
 export function isPlain(item = {}) {
@@ -33,6 +37,24 @@ export function groupCartLines(cart = []) {
     riga.indexes.push(index);
     righe.set(chiave, riga);
   });
+  return [...righe.values()];
+}
+
+// Lo stesso per le righe di un ordine gia' preso: il server ne fa una per
+// unita', ma su una comanda «1x Acqua» scritto due volte si conta a occhio e si
+// sbaglia. Le righe con modifiche diverse restano separate.
+export function groupOrderItems(items = []) {
+  const righe = new Map();
+  for (const item of items) {
+    const chiave = firma(item);
+    const riga = righe.get(chiave);
+    if (riga) {
+      riga.quantity += Number(item.quantity ?? 1);
+      riga.price += Number(item.price ?? 0);
+    } else {
+      righe.set(chiave, { ...item, quantity: Number(item.quantity ?? 1), price: Number(item.price ?? 0) });
+    }
+  }
   return [...righe.values()];
 }
 

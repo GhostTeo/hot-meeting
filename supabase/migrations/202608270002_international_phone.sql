@@ -35,19 +35,18 @@ set search_path = pg_catalog
 as $$
 declare
   v_digits text := regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g');
+  v_national text;
   v_coda text;
   v_salto integer;
   v_i integer;
   v_crescente boolean;
 begin
-  -- Da dieci a quindici cifre, prefisso compreso.
-  if length(v_digits) < 10 or length(v_digits) > 15 then
+  if length(v_digits) < 8 or length(v_digits) > 15 then
     return false;
   end if;
 
   -- Un numero finto lo si riconosce dalla parte nazionale, non dal prefisso:
-  -- «+39 0000000000» ha il prefisso giusto e il resto inventato. Non sapendo
-  -- quanto e' lungo il prefisso, si guarda togliendone da zero a tre cifre.
+  -- «+39 0000000000» ha il prefisso giusto e il resto inventato.
   for v_salto in 0 .. 3 loop
     v_coda := substr(v_digits, v_salto + 1);
     if length(v_coda) >= 7 then
@@ -67,7 +66,21 @@ begin
     end if;
   end loop;
 
-  return true;
+  -- In Italia le lunghezze sono note: dieci cifre il cellulare, da sei a undici
+  -- il fisso. Fuori si controllano solo i limiti internazionali, senza fingere
+  -- di conoscere le regole di ogni paese.
+  if v_digits like '39%' then
+    v_national := substr(v_digits, 3);
+    if v_national like '3%' then
+      return length(v_national) = 10;
+    end if;
+    if v_national like '0%' then
+      return length(v_national) between 6 and 11;
+    end if;
+    return false;
+  end if;
+
+  return length(v_digits) between 10 and 15;
 end;
 $$;
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { waitingStage } from '../js/views/waiting-room.js';
+import { countdownText, waitingProgress, waitingStage } from '../js/views/waiting-room.js';
 
 // Chi aspetta vuole sapere due cose: a che punto e', e quando uscire di casa.
 
@@ -39,4 +39,20 @@ test('se il tempo e scaduto ma non e ancora pronta non si mente: sta uscendo', (
 
   assert.equal(stage.key, 'almost');
   assert.equal(stage.progress, 97);
+});
+
+test('il conto alla rovescia scorre al secondo, non a scatti di minuto', () => {
+  assert.equal(countdownText(9 * 60000), '9:00');
+  assert.equal(countdownText(8 * 60000 + 32000), '8:32');
+  assert.equal(countdownText(45000), '0:45');
+  assert.equal(countdownText(0), '0:00');
+  assert.equal(countdownText(-5000), '0:00');
+});
+
+test('la barra si riempie sui secondi, cosi si muove sotto gli occhi', () => {
+  const promessi = 10 * 60000;
+
+  assert.equal(waitingProgress(promessi, promessi), 0);
+  assert.equal(waitingProgress(promessi / 2, promessi), 50);
+  assert.equal(waitingProgress(0, promessi), 97);
 });

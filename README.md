@@ -219,6 +219,11 @@ dopo costa una pizza. Da li' si toglie una riga o si aggiunge quello che manca:
 da bere per primo, perche' e' quello che manca davvero a chi ha ordinato una
 pizza.
 
+Un ordine appena arrivato porta un **pallino giallo** finche' il cameriere non lo
+apre, e la voce Ordini mostra quanti ne restano da guardare: se ne arrivano tre
+insieme, nessuno resta indietro. Le bibite sono in evidenza, su una riga a
+parte: le prende lui al banco, non la cucina.
+
 Nel pannello Creator la sezione Ordini tiene **solo quelli ancora da fare**:
 segnato pronto, l'ordine sparisce dalla lista e resta nello Storico. Toccando un
 ordine si apre la sua scheda con stato, orari, minuti promessi, pagamento,
@@ -246,6 +251,9 @@ report entrano soltanto i movimenti registrati.
 Apple Pay e Google Pay sono etichette dimostrative senza processore di
 pagamento: nessun addebito, nessun rimborso reale. Non vengono inviati SMS ne'
 email. L'ordine dal ristorante non e' ancora implementato.
+
+Righe identiche si contano insieme: «2x Acqua» invece di due volte «1x Acqua»,
+sia sulla comanda sia negli ordini.
 
 La comanda esce da sola quando entra l'ordine, se in Cucina e' acceso
 **«stampa la comanda appena arriva l'ordine»** (e' un'impostazione del singolo

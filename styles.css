@@ -493,6 +493,21 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 }
 
 .kt-auto input { width: auto; margin: 0 }
+
+.kt-note {
+  max-width: 62ch;
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.kt-note code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--paper-warm);
+  font-size: 12px;
+}
 .kt-auto:has(input:checked) { border-color: var(--basil); color: var(--basil); font-weight: 650 }
 .kt-section { margin: 34px 0 14px; font-size: 22px }
 .kt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 16px }
@@ -717,6 +732,65 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .ordercard .actions .btn { flex: 1 1 auto; min-width: 96px }
 .ordercard .actions .btn.primary { flex: 2 1 140px }
 .ordercard.is-ready { border-left-color: var(--gold) }
+
+/* Un ordine non ancora aperto dal cameriere si vede da lontano: se ne arrivano
+   tre insieme, nessuno deve restare indietro. */
+.ordercard.is-new { border-left-color: var(--gold); background: #fffaf0 }
+
+.ordercard-n .dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 4px rgba(223, 164, 75, .25);
+  animation: pulsa 1.6s ease-in-out infinite;
+}
+
+@keyframes pulsa {
+  50% { box-shadow: 0 0 0 8px rgba(223, 164, 75, .08) }
+}
+
+/* Le bibite le prende il cameriere, non la cucina: qui si vedono bene. */
+.ordercard-bar {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: #eaf1ff;
+}
+
+.ordercard-bar > span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #3c5a94;
+}
+
+.ordercard-bar > b { font-size: 15.5px; color: #1f3763 }
+
+.sidebar .btn { position: relative }
+
+.badge {
+  display: inline-block;
+  min-width: 20px;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--gold);
+  color: #3b2a08;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ordercard-n .dot { animation: none }
+}
 .ordercard-flag { color: #9a6b13 }
 .kt-foot { margin: 22px 0 0; font-size: 13px; color: var(--ink-soft); text-align: center }
 
