@@ -8,7 +8,7 @@
 // Il prezzo lo rifa' il server dal listino: quello calcolato qui serve solo a
 // dire a voce quanto viene.
 
-import { isValidItalianPhone } from '../domain.js';
+import { nameCheck, phoneProblem } from '../customer-identity.js';
 
 function rows(draft = {}, menu = []) {
   return menu
@@ -23,8 +23,11 @@ export function counterOrderTotal(draft, menu) {
 export function counterOrderIssues(draft = {}, menu = []) {
   const issues = [];
   if (!rows(draft, menu).length) issues.push('Aggiungi almeno un prodotto.');
-  if (!String(draft.name ?? '').trim()) issues.push('Scrivi il nome di chi ha ordinato.');
-  if (!isValidItalianPhone(draft.phone ?? '')) issues.push('Serve un numero di telefono italiano valido.');
+  // Anche al telefono serve un nome vero e un numero raggiungibile: e' con
+  // quelli che si richiama se la pizza non viene ritirata.
+  if (nameCheck(draft.name ?? '') === 'no') issues.push('Scrivi il nome di chi ha ordinato.');
+  const telefono = phoneProblem(draft.phone ?? '');
+  if (telefono) issues.push(telefono);
   return issues;
 }
 

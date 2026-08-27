@@ -1,4 +1,4 @@
-import { isValidItalianPhone, summarizeOrders, calculateCustomizedPrice, DEMO_PAYMENT_METHODS, mergeMenuDefaults, customizationLines } from './domain.js';
+import { summarizeOrders, calculateCustomizedPrice, DEMO_PAYMENT_METHODS, mergeMenuDefaults, customizationLines } from './domain.js';
 import { DEFAULT_OVEN, ovenThroughput, readyInMinutes } from './oven.js';
 import { resolveBusinessDate, resolveClosure } from './operations.js';
 import { dailyReport } from './reports.js';
@@ -23,6 +23,7 @@ import { announceOrders, arrivedOrders, unlockChime } from './notify.js';
 import { orderSuggestions } from './suggestions.js';
 import { groupCartLines, isPlain, plainCartCount } from './cart-lines.js';
 import { loginProblem } from './login-errors.js';
+import { nameCheck, normalizePhoneNumber, phoneProblem } from './customer-identity.js';
 import { kitchenPanel } from './views/kitchen.js';
 import { appConfig } from './config.js';
 import { bootstrapDataLayer, isCreatorSession } from './bootstrap.js';
@@ -33,7 +34,7 @@ const defaults={view:'customer',creator:false,locale:'it',receipt:null,contact:n
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
  {id:'cola',type:'drink',name:'Cola',price:3,emoji:'🥤',ingredients:[],available:true}],orders:[]};
-let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let confirming=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let orderProgress=null; let progressTimer=null; let printed=new Set(); let autoPrint=localStorage.getItem('hm-autoprint')==='1';
+let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='service'; let customizing=null; let confirming=null; let pendingName=null; let askedName=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let orderProgress=null; let progressTimer=null; let printed=new Set(); let autoPrint=localStorage.getItem('hm-autoprint')==='1';
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
@@ -105,7 +106,8 @@ function customer(){
     ${state.cart.length?`<div class="cart-bar"><span>${state.cart.length} \u00b7 <strong>${money(total)}</strong></span><button class="btn primary" id="cart-open">${t('tabs.cart')}</button></div>`:''}
     <aside id="cart" class="drawer hidden">${cart()}</aside>
     ${customizing?customizer():''}
-    ${confirming?confirmPanel():''}`;
+    ${confirming?confirmPanel():''}
+    ${pendingName?namePanel():''}`;
 }
 
 // La foto e' il primo argomento di vendita: quando manca si mostra comunque un
@@ -141,6 +143,16 @@ function products(type){
   }).join('');
 }
 
+function namePanel(){
+  return `<div class="modal-backdrop"><section class="modal confirm" role="dialog" aria-modal="true">
+    <h2 class="wait-stage">\u00ab${esc(pendingName)}\u00bb: ${t('name.confirm')}</h2>
+    <p class="confirm-sub">${t('name.fake')}</p>
+    <div class="confirm-actions">
+      <button class="btn secondary" id="name-no">${t('name.confirmNo')}</button>
+      <button class="btn primary" id="name-yes">${t('name.confirmYes')}</button>
+    </div>
+  </section></div>`;
+}
 function confirmPanel(){
   return `<div class="modal-backdrop"><section class="modal confirm" id="confirm-modal" role="dialog" aria-modal="true" aria-label="${t('confirm.title')}">${confirmBody()}</section></div>`;
 }
@@ -309,27 +321,39 @@ function bind(){
   document.querySelector('#recap-sms')?.addEventListener('click',()=>toast(t('recap.sent')));
   document.querySelector('#recap-email')?.addEventListener('click',()=>toast(t('recap.sent')));
   document.querySelector('#checkout')?.addEventListener('click',()=>{
+    const nome=document.querySelector('#name').value.trim();
     const phone=document.querySelector('#phone').value;
     const email=document.querySelector('#email')?.value.trim()||'';
     if(!orderingOpen())return toast(currentClosure().closed?currentClosure().message:'Il servizio online non e aperto.');
-    if(!isValidItalianPhone(phone))return toast('Inserisci un numero di telefono italiano valido.');
+    // Il nome serve per chiamare chi aspetta, il numero per avvisarlo se
+    // qualcosa non va: un ordine intestato a niente e' una pizza che resta li'.
+    const nomeEsito=nameCheck(nome);
+    if(nomeEsito==='no')return toast(nome?t('name.fake'):t('name.missing'));
+    const problemaTelefono=phoneProblem(phone);
+    if(problemaTelefono)return toast(problemaTelefono);
     if(email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return toast('Controlla l indirizzo email.');
-    // Tornando al carrello questi campi si svuotavano e bisognava riscrivere
-    // tutto: si tengono da parte finche' l'ordine non parte.
-    state.contact={name:document.querySelector('#name').value||'',phone,email,payment:document.querySelector('input[name="payment"]:checked').value};
+    // Si tiene da parte quello che il cliente ha scritto PRIMA di ridisegnare:
+    // altrimenti la finestra di conferma fa tornare i campi ai valori vecchi.
+    state.contact={name:nome,phone,email,payment:document.querySelector('input[name="payment"]:checked').value};
     save();
+    // Un nome insolito non si rifiuta, si fa confermare: chi ha davvero un
+    // cognome raro deve poter ordinare la pizza.
+    if(nomeEsito==='ask'&&askedName!==nome){askedName=nome;pendingName=nome;render();return}
     // Prima di mandare in cucina si rilegge tutto: una pizza sbagliata scoperta
     // adesso costa un tocco, scoperta dopo costa una pizza.
     confirming={
-      name:document.querySelector('#name').value||'',
-      phone,email,
+      name:nome,
+      phone:normalizePhoneNumber(phone),email,
       paymentId:document.querySelector('input[name="payment"]:checked').value,
       // Le proposte si scelgono adesso e non cambiano piu': se sparissero
       // appena tocchi il piu', non potresti prenderne quattro.
       suggestions:orderSuggestions(state.cart,state.menu).map(p=>p.id)
     };
+    pendingName=null;
     render();
   });
+  document.querySelector('#name-yes')?.addEventListener('click',()=>{pendingName=null;document.querySelector('#cart').classList.remove('hidden');document.querySelector('#checkout')?.click()});
+  document.querySelector('#name-no')?.addEventListener('click',()=>{pendingName=null;askedName=null;render();document.querySelector('#cart')?.classList.remove('hidden');document.querySelector('#name')?.focus()});
   function refreshConfirm(){
     const finestra=document.querySelector('#confirm-modal');
     if(!finestra)return render();

@@ -262,8 +262,23 @@ operatore esterno a pagamento, con un account e una chiave. Finche' non c'e', in
 app non ci sono nemmeno i bottoni: meglio un buco dichiarato che un bottone che
 fa finta.
 
-L'ordine preso al banco senza numero di telefono non e' possibile: il database
-chiede un numero italiano valido, perche' e' con quello che si avvisa.
+## Nome e telefono di chi ordina
+
+Il nome serve per chiamare chi aspetta, il numero per avvisarlo se qualcosa non
+va: un ordine intestato a «rifjodk» con dentro un numero inventato e' una pizza
+che nessuno ritira.
+
+Non si puo' verificare che un nome sia vero, si puo' solo scartare quello che un
+nome non e'. Quindi si rifiuta cio' che e' palesemente battuto a caso (cifre,
+sequenze di tastiera, lettere ripetute, parole senza vocali) e si **chiede
+conferma** su cio' che sembra strano: rifiutare il nome vero di una persona e'
+peggio che accettarne uno finto, e chi ha un cognome raro deve poter ordinare
+la pizza. Nomi non latini, apostrofi e trattini passano senza domande.
+
+Il numero vale per tutto il mondo, non solo per l'Italia: la pizzeria e' in una
+citta' piena di turisti. Si conserva in formato internazionale, e chi scrive
+senza prefisso si intende italiano. Numeri troppo corti, tutti uguali o in
+sequenza vengono rifiutati, sul sito e di nuovo sul database.
 
 Le informazioni sugli allergeni derivano dai dati inseriti dal locale, puo'
 verificarsi contaminazione crociata e chi soffre di allergie gravi deve
