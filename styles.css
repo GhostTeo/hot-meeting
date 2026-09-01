@@ -774,6 +774,28 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .detail-actions { display: grid; gap: 8px }
 .detail-actions .btn { padding: 14px }
 
+/* La spia del collegamento: verde e discreta quando va, gialla o rossa e
+   impossibile da ignorare quando no. */
+.spia {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border-radius: 99px;
+  font-size: 13.5px;
+  background: var(--paper-warm);
+  color: var(--ink-soft);
+}
+
+.spia-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--basil); flex: none }
+.spia.ok { padding: 6px 12px; font-size: 12px; opacity: .7 }
+.spia.senzaRete { background: var(--accent-wash); color: var(--accent-dark); font-weight: 650 }
+.spia.senzaRete .spia-dot { background: var(--accent) }
+.spia.nonRisponde { background: #fdf0d4; color: #7a5410; font-weight: 650 }
+.spia.nonRisponde .spia-dot { background: var(--gold) }
+.spia .btn { margin-left: auto; padding: 6px 12px; font-size: 12px }
+
 .login-card { max-width: 440px; margin: 40px auto }
 .login-card h1 { font-size: 42px; margin-bottom: 8px }
 .login-card p { color: var(--ink-soft); margin: 0 0 8px }

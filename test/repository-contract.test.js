@@ -368,7 +368,8 @@ test('repository Supabase: sottoscrive tutte le fonti realtime e rimuove il cana
     'business_days', 'services', 'service_sessions', 'orders', 'order_items',
     'order_item_changes', 'order_revisions', 'closures'
   ]);
-  assert.equal(client.removedChannel.name, 'hot-meeting-repository');
+  // Il nome porta l'ora: riaprendo un canale non si litiga con quello vecchio.
+  assert.match(client.removedChannel.name, /^hot-meeting-\d+$/);
 });
 
 test('factory repository: usa Supabase solo quando riceve un client pubblico', async () => {
@@ -381,4 +382,37 @@ test('factory repository: usa Supabase solo quando riceve un client pubblico', a
     assert.equal(typeof local[method], 'function');
     assert.equal(typeof remote[method], 'function');
   }
+});
+
+test('repository Supabase: un canale caduto si riapre da solo e rilegge tutto', async () => {
+  // Il guaio peggiore non e' internet che cade, e' il canale che muore in
+  // silenzio: la cucina guarda uno schermo fermo e nessuno se ne accorge.
+  const canali = [];
+  const eventi = [];
+  const client = {
+    channel(nome) {
+      const canale = {
+        nome,
+        stato: null,
+        on() { return canale; },
+        subscribe(callback) { canale.avvisa = callback; return canale; }
+      };
+      canali.push(canale);
+      return canale;
+    },
+    removeChannel() {}
+  };
+  const repo = createSupabaseRepository({ client });
+  const stop = repo.subscribe(evento => eventi.push(evento.scope));
+
+  canali[0].avvisa('SUBSCRIBED');
+  assert.deepEqual(eventi, ['all'], 'appena collegato rilegge tutto');
+
+  canali[0].avvisa('CHANNEL_ERROR');
+  await new Promise(risolvi => setTimeout(risolvi, 1200));
+
+  assert.equal(canali.length, 2, 'il canale caduto viene riaperto');
+  canali[1].avvisa('SUBSCRIBED');
+  assert.deepEqual(eventi, ['all', 'all'], 'e riletto di nuovo');
+  stop();
 });

@@ -1,5 +1,6 @@
 import { paymentLabel } from '../domain.js';
 import { calendarFromClosures, closureRowFromException, weeklyClosureRow } from '../closures.js';
+import { attesaPrimaDiRiprovare, vaRiconnesso } from '../connessione.js';
 const MENU_SELECT = `
   id, slug, product_type, price_cents, available, sort_order, image_url,
   product_translations(locale, name, description),
@@ -548,8 +549,11 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       return throwIfError(result);
     },
 
+    // Il canale in tempo reale puo' morire senza dire niente: la pagina resta
+    // viva, la cucina guarda uno schermo fermo e nessuno se ne accorge finche'
+    // un cliente non si presenta al banco. Per questo qui si sorveglia lo stato
+    // e si riapre da soli, riprovando sempre piu' di rado.
     subscribe(listener) {
-      const channel = client.channel('hot-meeting-repository');
       const scopes = {
         products: 'menu', product_translations: 'menu', ingredients: 'menu',
         product_ingredients: 'menu', product_allergens: 'menu',
@@ -557,13 +561,43 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         orders: 'orders', order_items: 'orders', order_item_changes: 'orders', order_revisions: 'orders',
         closures: 'calendar'
       };
-      for (const [table, scope] of Object.entries(scopes)) {
-        channel.on('postgres_changes', { event: '*', schema: 'public', table }, payload => {
-          listener({ type: 'repository.changed', scope });
+      let channel = null;
+      let tentativi = 0;
+      let riavvio = null;
+      let spento = false;
+
+      function apri() {
+        if (spento) return;
+        channel = client.channel(`hot-meeting-${Date.now()}`);
+        for (const [table, scope] of Object.entries(scopes)) {
+          channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+            listener({ type: 'repository.changed', scope });
+          });
+        }
+        channel.subscribe(stato => {
+          if (stato === 'SUBSCRIBED') {
+            tentativi = 0;
+            // Riaperto dopo una caduta: quello che e' successo nel frattempo
+            // non e' arrivato, quindi si rilegge tutto.
+            listener({ type: 'repository.changed', scope: 'all' });
+            return;
+          }
+          if (!vaRiconnesso(stato) || spento) return;
+          clearTimeout(riavvio);
+          riavvio = setTimeout(() => {
+            try { client.removeChannel(channel); } catch { /* gia' chiuso */ }
+            tentativi += 1;
+            apri();
+          }, attesaPrimaDiRiprovare(tentativi));
         });
       }
-      channel.subscribe();
-      return () => client.removeChannel(channel);
+
+      apri();
+      return () => {
+        spento = true;
+        clearTimeout(riavvio);
+        try { client.removeChannel(channel); } catch { /* gia' chiuso */ }
+      };
     }
   };
 }

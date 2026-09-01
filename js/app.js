@@ -24,6 +24,7 @@ import { orderSuggestions } from './suggestions.js';
 import { countdownText, waitingProgress } from './views/waiting-room.js';
 import { groupCartLines, groupOrderItems, isPlain, plainCartCount } from './cart-lines.js';
 import { loginProblem } from './login-errors.js';
+import { statoConnessione } from './connessione.js';
 import { nameCheck, normalizePhoneNumber, phoneProblem } from './customer-identity.js';
 import { kitchenPanel } from './views/kitchen.js';
 import { appConfig } from './config.js';
@@ -35,12 +36,13 @@ const defaults={view:'customer',creator:false,locale:'it',receipt:null,contact:n
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
  {id:'cola',type:'drink',name:'Cola',price:3,emoji:'🥤',ingredients:[],available:true}],orders:[]};
-let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='orders'; let customizing=null; let confirming=null; let pendingName=null; let askedName=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let orderProgress=null; let progressTimer=null; let printed=new Set();
+let state=load(); const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='orders'; let customizing=null; let confirming=null; let pendingName=null; let askedName=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let ultimoContatto=null; let orderProgress=null; let progressTimer=null; let printed=new Set();
 let seenOrders=new Set(JSON.parse(localStorage.getItem('hm-seen-orders')||'[]')); let autoPrint=localStorage.getItem('hm-autoprint')==='1';
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
 const stateRefresh=createRepositoryRefreshCoordinator({repository,apply(snapshot){
+  ultimoContatto=Date.now();
   // Chi sta in cassa non guarda lo schermo tutto il tempo: se un ordine entra
   // in silenzio lo si scopre col cliente sulla porta.
   const arrivati=state.creator?arrivedOrders(ordersSeen,snapshot.orders??[]):[];
@@ -109,6 +111,17 @@ const SEZIONI=[
   ['report','\u{1F4B6}','Incassi'],
   ['calendar','\u{1F4C5}','Giorni di chiusura']
 ];
+// La spia del collegamento. Non serve a chi sa leggere i log: serve a chi sta
+// lavorando, per capire in un'occhiata se il sistema sta parlando col server o
+// se sta guardando uno schermo morto.
+function spiaConnessione(){
+  const stato=statoConnessione({online:navigator.onLine,ultimoContatto,now:Date.now()});
+  return `<div class="spia ${stato.chiave}">
+    <span class="spia-dot" aria-hidden="true"></span>
+    <span>${esc(stato.testo)}</span>
+    ${stato.chiave==='ok'?'':'<button class="btn secondary" id="riprova">Riprova adesso</button>'}
+  </div>`;
+}
 function esc(value=''){return String(value).replace(/[&<>'"]/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'})[character])}
 function render(){document.documentElement.lang=state.locale;releaseDialogTrap?.();releaseDialogTrap=null;document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;pendingDialog=null;save();render()});const side=document.querySelector('#topbar-side');if(side)side.innerHTML=state.view==='customer'?langSwitch():'';document.querySelector('#app').innerHTML=(state.view==='customer'?customer():state.view==='creator'?creator():kitchen())+dialogMarkup(pendingDialog,money);bind()}
 function langSwitch(){return `<div class="lang-switch">${LOCALES.map(code=>`<button class="btn ${state.locale===code?'primary':'secondary'} lang-pick" data-locale="${code}">${code.toUpperCase()}</button>`).join('')}</div>`}
@@ -221,7 +234,7 @@ function customizer(){const p=customizing.product,price=calculateCustomizedPrice
 // Cucina e Creator sono la stessa area riservata: le comande contengono nome e
 // telefono di chi ordina, non stanno dietro un semplice cambio di scheda.
 function loginPanel(titolo,sottotitolo){return `<div class="card login-card"><span class="eyebrow">Area riservata</span><h1>${titolo}</h1><p>${sottotitolo}</p><div class="field"><label>${runtime.mode==='supabase'?'Email':'Username'}<input id="user" ${runtime.mode==='supabase'?'type="email" autocomplete="username"':''}></label></div><div class="field"><label>Password<input id="pass" type="password" autocomplete="current-password"></label></div><button class="btn primary" id="login">Accedi</button></div>`}
-function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');const nuovi=ordiniNuovi();return `${editorDraft?orderEditorPanel(editorDraft,state.menu,money,editorOpenLine,editorAdding):''}<div class="admin"><aside class="sidebar">${SEZIONI.map(([id,icona,nome])=>`<button class="btn ${adminSection===id?'primary':'secondary'} admin-nav" data-section="${id}"><span class="nav-ic" aria-hidden="true">${icona}</span>${nome}${id==='orders'&&nuovi?`<span class="badge">${nuovi}</span>`:''}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
+function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');const nuovi=ordiniNuovi();return `${spiaConnessione()}${editorDraft?orderEditorPanel(editorDraft,state.menu,money,editorOpenLine,editorAdding):''}<div class="admin"><aside class="sidebar">${SEZIONI.map(([id,icona,nome])=>`<button class="btn ${adminSection===id?'primary':'secondary'} admin-nav" data-section="${id}"><span class="nav-ic" aria-hidden="true">${icona}</span>${nome}${id==='orders'&&nuovi?`<span class="badge">${nuovi}</span>`:''}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
 function ordersWithAdjustments(){const movements=state.adjustments||[];return (state.orders||[]).map(order=>({...order,adjustments:movements.filter(movement=>String(movement.orderId)===String(order.id))}))}
 function detailOrder(){return detailOrderId?(state.orders||[]).find(o=>String(o.id)===String(detailOrderId)):null}
 function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders'){
@@ -272,7 +285,7 @@ function orderCard(o){
   </article>`;
 }
 
-function kitchen(){if(!state.creator)return loginPanel('Cucina','Le comande contengono i dati di chi ordina: serve l accesso del Creator.');return kitchenPanel(state.orders,Date.now(),autoPrint,item=>!isPizza(item))}
+function kitchen(){if(!state.creator)return loginPanel('Cucina','Le comande contengono i dati di chi ordina: serve l accesso del Creator.');return spiaConnessione()+kitchenPanel(state.orders,Date.now(),autoPrint,item=>!isPizza(item))}
 function bind(){
   // Riscrivere solo #products lasciava i nuovi bottoni senza gestori: dopo un
   // cambio scheda "Personalizza e aggiungi" non rispondeva piu'.
@@ -669,6 +682,10 @@ function bind(){
     const order=state.orders.find(o=>String(o.id)===b.dataset.id);
     if(order){segnaVisto(order.id);stampaComande([order])}
   });
+  document.querySelector('#riprova')?.addEventListener('click',async()=>{
+    toast('Riprovo...');
+    try{await stateRefresh.refresh();render();toast('Collegato.')}catch{toast('Ancora niente: controlla la rete.')}
+  });
   document.querySelectorAll('.cash-print').forEach(b=>b.onclick=()=>{
     const shift=b.dataset.shift||null;
     const day=state.activeDay?.date||historyDates(state.orders)[0]||'';
@@ -748,6 +765,18 @@ setInterval(()=>{
   if(barra)barra.style.width=`${waitingProgress(mancano,(orderProgress?.promisedMinutes??ricevuta.minutes??0)*60000)}%`;
 },1000);
 seguiAttesa();
+// Un battito di sicurezza: anche se il canale in tempo reale tace, ogni mezzo
+// minuto si ricontrolla comunque. E' la differenza fra accorgersi di un ordine
+// con trenta secondi di ritardo e non accorgersene mai.
+setInterval(()=>{
+  if(!state.creator||document.hidden)return;
+  void stateRefresh.schedule();
+},30000);
+// Tornando dalla sospensione (schermo riacceso, scheda ripresa) i dati sono
+// vecchi: si rileggono subito invece di aspettare il battito.
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)void stateRefresh.schedule()});
+window.addEventListener('online',()=>{void stateRefresh.schedule();render()});
+window.addEventListener('offline',()=>render());
 render();hasRendered=true;setInterval(()=>{if(state.view==='kitchen')render()},1000);
 repository.subscribe(()=>{void stateRefresh.schedule()});
 runtime.auth.onChange(session=>{state.creator=isCreatorSession(session);void stateRefresh.schedule()});

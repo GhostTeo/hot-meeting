@@ -98,6 +98,25 @@ sito che possa filtrare il traffico prima che arrivi al database. E l'accesso
 Creator e' una sola coppia email/password senza secondo fattore: chi la ottiene
 entra.
 
+## Se qualcosa non va
+
+Il guaio peggiore non e' internet che cade: quello si vede. E' il canale in
+tempo reale che muore in silenzio mentre la pagina sembra viva, e la cucina
+resta a guardare uno schermo fermo convinta che non arrivino ordini.
+
+Contro questo ci sono tre cose. Il canale **si sorveglia e si riapre da solo**,
+riprovando sempre piu' di rado e rileggendo tutto appena torna, cosi' quello
+che e' successo nel frattempo non si perde. Ogni mezzo minuto c'e' un
+**controllo di sicurezza** che rilegge comunque, anche se il canale tace: e' la
+differenza fra accorgersi di un ordine con trenta secondi di ritardo e non
+accorgersene mai. E quando il dispositivo si risveglia o la rete torna, i dati
+si rileggono subito invece di aspettare.
+
+In cima all'area riservata c'e' una **spia**: verde e discreta quando tutto va,
+gialla o rossa quando no, con scritto in italiano cosa sta succedendo e un tasto
+per riprovare. Serve perche' chi lavora se ne accorga da solo, senza dover
+telefonare a qualcuno.
+
 ## Persistenza
 
 L'app e' collegata a un progetto Supabase reale: menu, giornate operative,
