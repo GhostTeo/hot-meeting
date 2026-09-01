@@ -37,7 +37,8 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       : (state.calendar ?? { closedWeekdays: [], exceptions: [] });
     return copy({
       ...state, calendar, adjustments: state.adjustments ?? [],
-      shift: open?.shift ?? null, online: open?.online ?? false
+      shift: open?.shift ?? null, online: open?.online ?? false,
+      ovenDefaults: state.ovenDefaults ?? null
     });
   }
 
@@ -68,6 +69,15 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       persist();
       emit('menu');
       return copy(saved);
+    },
+
+    async setWeekly(product, weekly) {
+      const entry = state.menu.find(candidate => candidate.id === product.id || candidate.databaseId === product.databaseId);
+      if (!entry) throw new Error(`Prodotto ${product.id} non trovato`);
+      entry.weekly = Boolean(weekly);
+      persist();
+      emit('menu');
+      return copy(entry);
     },
 
     async replaceMenu(menu) {
@@ -116,6 +126,15 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
         ? Math.round((order.readyAt - order.createdAt) / 60000)
         : 0;
       return { status: order.status, sequence: order.sequence, minutesLeft: restano, promisedMinutes: promessi };
+    },
+
+    async setOvenDefaults(oven) {
+      state.ovenDefaults = { slots: Number(oven.slots), bakeMinutes: Number(oven.bakeMinutes), bufferMinutes: Number(oven.bufferMinutes) };
+      const open = openServiceEntry();
+      if (open) open.oven = { ...state.ovenDefaults };
+      persist();
+      emit('services');
+      return copy(state.ovenDefaults);
     },
 
     async setServiceOven(serviceId, oven) {
@@ -169,7 +188,7 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       // La foto non fa parte di questo payload: rifare il prodotto da capo non
       // deve cancellarla.
       if (index === -1) state.menu.push(product);
-      else state.menu[index] = { ...product, imageUrl: state.menu[index].imageUrl ?? null };
+      else state.menu[index] = { ...product, imageUrl: state.menu[index].imageUrl ?? null, weekly: state.menu[index].weekly ?? false };
       persist();
       emit('menu');
       return id;

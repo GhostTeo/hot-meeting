@@ -123,7 +123,7 @@ test('hydration remota compone menu, giornata, servizi e viste correnti ordini',
   assert.equal(state.orders[0].items[0].name, 'Margherita');
   assert.deepEqual(state.orders[0].items[0].additions, [{ id: '90000000-0000-4000-8000-000000000001', name: 'Olive', price: 1, quantity: 1 }]);
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
-    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'business_days', 'services', 'orders',
+    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'pizzeria_settings', 'business_days', 'services', 'orders',
     'current_order_items', 'current_order_item_changes', 'current_order_totals', 'closures',
     'current_payment_adjustments'
   ]);
@@ -237,7 +237,7 @@ test('snapshot anonimo legge solo le viste pubbliche e non maschera i loro error
 
   assert.equal(state.services.lunch.id, 'service-public');
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
-    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status'
+    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'pizzeria_settings'
   ]);
 
   const cache = createLocalRepository({ initialState: { menu: [{ id: 'last-good' }] } });

@@ -269,7 +269,7 @@ test('repository Supabase: preferisce il menu remoto e aggiorna la cache di fall
   assert.deepEqual(menu, [{
     id: 'margherita', databaseId: 'product-uuid', type: 'pizza', name: 'Margherita',
     names: { it: 'Margherita' }, descriptions: { it: '', en: '' }, sortOrder: 0,
-    imageUrl: null, price: 9, available: true,
+    imageUrl: null, price: 9, available: true, weekly: false,
     ingredients: [], ingredientNames: [], additions: [],
     allergens: [], allergenLabels: [], allergenIds: [], ingredientIds: {}
   }]);

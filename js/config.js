@@ -9,7 +9,7 @@
 // invita a contattare il locale senza mostrare un numero inventato.
 export const appConfig = globalThis.HOT_MEETING_CONFIG ?? {
   mode: 'supabase',
-  pizzeriaPhone: '3467095833',
+  pizzeriaPhone: '0270600072',
   supabaseUrl: 'https://nzoqtfbvyhemclwmwyah.supabase.co',
   supabaseAnonKey: 'sb_publishable_jEkf-urcoWX9eozzebbrrw_OXnd4t45',
   // Indirizzo della funzione che apre il pagamento su Stripe. Finche' resta

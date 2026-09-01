@@ -10,6 +10,7 @@ export function applyRepositorySnapshot(state, snapshot) {
     online: snapshot.online,
     orders: snapshot.orders,
     pizzasQueued: snapshot.pizzasQueued ?? null,
+    ovenDefaults: snapshot.ovenDefaults ?? state.ovenDefaults ?? null,
     adjustments: snapshot.adjustments ?? []
   };
 }

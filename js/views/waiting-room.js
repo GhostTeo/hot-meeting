@@ -33,6 +33,21 @@ export function waitingProgress(msLeft, msPromised) {
   return Math.min(97, Math.max(0, Math.round(trascorso * 100)));
 }
 
+// Quanto tempo dopo l'orario promesso un ordine si considera comunque concluso,
+// anche se il telefono del cliente non ha mai ricevuto la conferma di consegna.
+const RICEVUTA_SCADUTA_MS = 2 * 60 * 60 * 1000;
+
+// Alla riapertura dell'app: teniamo l'attesa solo se l'ordine e' ancora vivo.
+// Se e' stato consegnato (receiptDone, visto la volta prima) o e' passato molto
+// tempo dall'orario promesso, lo dimentichiamo e il cliente riparte dal menu.
+export function shouldForgetReceipt({ receipt = null, receiptDone = false, now = Date.now() } = {}) {
+  if (!receipt) return false;
+  if (receiptDone) return true;
+  const readyAt = Number(receipt.readyAt ?? 0);
+  if (readyAt > 0 && now - readyAt > RICEVUTA_SCADUTA_MS) return true;
+  return false;
+}
+
 export function waitingStage({ status = 'preparing', minutesLeft = null, promisedMinutes = null } = {}) {
   if (status === 'collected') return { ...STAGES.collected, progress: 100 };
   if (status === 'ready') return { ...STAGES.ready, progress: 100 };

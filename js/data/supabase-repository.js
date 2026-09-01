@@ -37,6 +37,10 @@ function mapProduct(row) {
     imageUrl: row.image_url ?? null,
     price: row.price_cents / 100,
     available: row.available,
+    // La colonna weekly si legge solo dopo aver applicato la migrazione
+    // 202609010003 e aggiunto "weekly" a MENU_SELECT: finche' non c'e', resta
+    // false e la "pizza della settimana" non compare (nessun errore di lettura).
+    weekly: row.weekly === true,
     ingredients: included
       .sort((left, right) => (left.sort_order ?? 0) - (right.sort_order ?? 0))
       .map(relation => italianName(relation.ingredients?.ingredient_translations, relation.ingredients?.slug)),
@@ -305,11 +309,13 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         orderedQuery(client, 'public_opening_status', '*', 'business_date', false),
         orderedQuery(client, 'public_closure_calendar', '*', 'closure_type'),
         orderedQuery(client, 'allergens', '*', 'eu_order'),
-        client.from('public_queue_status').select('*')
+        client.from('public_queue_status').select('*'),
+        client.from('pizzeria_settings').select('*')
       ]);
       const publicFailure = publicResults.find(result => result.error);
       if (publicFailure) throw publicFailure.error;
-      const [productRows, publicServices, publicClosures, allergenRows, queueRows] = publicResults.map(result => result.data);
+      const [productRows, publicServices, publicClosures, allergenRows, queueRows, settingsRows] = publicResults.map(result => result.data);
+      const settings = settingsRows?.[0];
 
       let dayRows = [];
       let creatorServices = [];
@@ -377,6 +383,11 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
           : 0,
         shift: activeService?.shift ?? null,
         online: activeService?.online ?? false,
+        // Il forno e' una proprieta' fissa della pizzeria: si legge dalle
+        // impostazioni, non dal servizio, cosi' c'e' sempre anche a locale chiuso.
+        ovenDefaults: settings
+          ? { slots: settings.oven_slots, bakeMinutes: settings.bake_minutes, bufferMinutes: settings.handover_minutes }
+          : null,
         orders: composeOrders(orderRows, itemRows, changeRows, totalRows, serviceById),
         adjustments: adjustmentRows.map(mapAdjustment)
       };
@@ -400,6 +411,18 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         available: row.available ?? product.available
       };
       await cache?.saveProduct({ ...product, ...saved });
+      return saved;
+    },
+
+    async setWeekly(product, weekly) {
+      if (!product.databaseId) throw new TypeError('Il prodotto remoto richiede un UUID databaseId');
+      const result = await client.rpc('save_product', {
+        p_product_id: product.databaseId,
+        p_weekly: Boolean(weekly)
+      });
+      const row = throwIfError(result);
+      const saved = { ...product, weekly: row.weekly ?? Boolean(weekly) };
+      await cache?.saveProduct(saved);
       return saved;
     },
 
@@ -505,6 +528,15 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         p_handover_minutes: Number(oven.bufferMinutes)
       });
       return mapService(throwIfError(result));
+    },
+
+    async setOvenDefaults(oven) {
+      const result = await client.rpc('set_oven_defaults', {
+        p_slots: Number(oven.slots),
+        p_bake: Number(oven.bakeMinutes),
+        p_handover: Number(oven.bufferMinutes)
+      });
+      return throwIfError(result);
     },
 
     async setProductPhoto(productId, imageUrl) {

@@ -48,19 +48,20 @@ function note(frequency, start, duration, volume) {
   oscillator.stop(start + duration + 0.02);
 }
 
-// Due terzine identiche a mezzo secondo di distanza: una si perde nel rumore,
-// due no. Il volume e' alto ma le note sono corte, quindi non da' fastidio.
+// Tre terzine invece di due, e a volume pieno: piu' lunga e piu' forte, cosi'
+// passa sopra il forno e la cappa. Le note restano corte, quindi e' un allarme
+// deciso, non un fischio continuo.
 const MOTIVO = [
-  { hz: 1047, quando: 0, durata: 0.18, volume: 0.55 },
-  { hz: 1319, quando: 0.15, durata: 0.18, volume: 0.55 },
-  { hz: 1568, quando: 0.30, durata: 0.42, volume: 0.6 }
+  { hz: 1047, quando: 0, durata: 0.2, volume: 0.85 },
+  { hz: 1319, quando: 0.16, durata: 0.2, volume: 0.85 },
+  { hz: 1568, quando: 0.32, durata: 0.5, volume: 0.95 }
 ];
 
 export function chime() {
   if (!unlockChime() || !audio) return false;
   try {
     const adesso = audio.currentTime + 0.01;
-    for (const ripetizione of [0, 0.62]) {
+    for (const ripetizione of [0, 0.6, 1.2]) {
       for (const nota of MOTIVO) {
         note(nota.hz, adesso + ripetizione + nota.quando, nota.durata, nota.volume);
       }
@@ -71,18 +72,54 @@ export function chime() {
   }
 }
 
+// Vibrazione lunga e insistente: su molti telefoni si sente anche in silenzioso.
 export function buzz() {
   try {
-    return Boolean(navigator.vibrate?.([120, 80, 120, 80, 220]));
+    return Boolean(navigator.vibrate?.([300, 120, 300, 120, 300, 120, 500]));
   } catch {
     return false;
   }
 }
 
+// L'allarme che NON si spegne da solo.
+//
+// Un trillo singolo si perde: se il cameriere e' di la', l'ordine resta li'. Qui
+// l'avviso suona e vibra, e continua a ripetersi ogni paio di secondi finche'
+// qualcuno non lo tocca (stopAlarm). Cosi' un ordine non passa mai inosservato.
+//
+// Onesto sul silenzioso: su iPhone l'interruttore fisico del silenzioso zittisce
+// l'audio di qualsiasi pagina web, e nessun sito puo' forzarlo. La vibrazione e
+// il ripetersi aiutano; il suono garantito col telefono in silenzioso lo dara'
+// solo l'app nativa. Su Android il web di solito suona lo stesso.
+let alarmTimer = null;
+
+export function alarmActive() {
+  return alarmTimer !== null;
+}
+
+export function startAlarm(options = {}) {
+  if (alarmTimer !== null) return false;
+  const play = options.play ?? (() => { chime(); buzz(); });
+  const schedule = options.setInterval ?? globalThis.setInterval;
+  const intervalMs = options.intervalMs ?? 1900;
+  play();
+  alarmTimer = schedule(play, intervalMs);
+  return true;
+}
+
+export function stopAlarm(options = {}) {
+  if (alarmTimer === null) return false;
+  const cancel = options.clearInterval ?? globalThis.clearInterval;
+  cancel(alarmTimer);
+  alarmTimer = null;
+  try { navigator.vibrate?.(0); } catch { /* niente vibrazione, pazienza */ }
+  return true;
+}
+
 export function announceOrders(orders = []) {
   if (!orders.length) return null;
-  chime();
-  buzz();
+  // Non un trillo solo: parte l'allarme che continua finche' non lo fermano.
+  startAlarm();
   return orders.length === 1
     ? `Nuovo ordine #${String(orders[0].sequence ?? 0).padStart(2, '0')}`
     : `${orders.length} nuovi ordini`;

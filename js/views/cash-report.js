@@ -8,6 +8,11 @@
 // Entrano solo gli ordini chiusi: quello che e' ancora in forno non e' incasso.
 
 import { DEMO_PAYMENT_METHODS } from '../domain.js';
+import { shiftBreakdown } from '../reports.js';
+
+// I contanti sono l'unica cosa che sta davvero nel cassetto; tutto il resto
+// (Apple Pay, Google Pay, online) e' elettronico e non si conta a mano.
+const METODI_CONTANTI = new Set(['cash']);
 
 const CHIUSI = new Set(['ready', 'collected']);
 
@@ -58,7 +63,7 @@ function euro(value) {
 
 // Le stesse righe della comanda: chi stampa le traduce, cosi' il riepilogo esce
 // dalla stessa stampante e con lo stesso codice.
-export function cashReportLines(report, { date = '', shift = null } = {}) {
+export function cashReportLines(report, { date = '', shift = null, orders = null } = {}) {
   const [anno, mese, giorno] = String(date).split('-');
   const righe = [
     { kind: 'number', text: `${giorno ?? '--'}-${mese ?? '--'}` },
@@ -72,11 +77,40 @@ export function cashReportLines(report, { date = '', shift = null } = {}) {
   for (const method of DEMO_PAYMENT_METHODS) {
     righe.push({ kind: 'item', text: `${IN_CASSA[method.id] ?? method.label}: ${euro(report.byMethod[method.id])}` });
   }
+
+  // Riepilogo che serve a far quadrare il cassetto: da un lato i contanti (che
+  // ci sono davvero), dall'altro tutto l'elettronico (che non c'e').
+  const contanti = Number(DEMO_PAYMENT_METHODS
+    .filter(method => METODI_CONTANTI.has(method.id))
+    .reduce((totale, method) => totale + Number(report.byMethod[method.id] ?? 0), 0).toFixed(2));
+  const elettronico = Number((Number(report.gross ?? 0) + Number(report.supplements ?? 0) - Number(report.refunds ?? 0) - contanti).toFixed(2));
+  righe.push({ kind: 'separator', text: '' });
+  righe.push({ kind: 'change', text: `Nel cassetto (contanti): ${euro(contanti)}` });
+  righe.push({ kind: 'change', text: `Elettronico: ${euro(elettronico)}` });
+
   righe.push({ kind: 'separator', text: '' });
   righe.push({ kind: 'change', text: `Incasso lordo: ${euro(report.gross)}` });
   if (report.supplements) righe.push({ kind: 'change', text: `Supplementi: ${euro(report.supplements)}` });
   if (report.refunds) righe.push({ kind: 'change', text: `Rimborsi: ${euro(report.refunds)}` });
-  if (report.fees) righe.push({ kind: 'change', text: `Trattenute: ${euro(report.fees)}` });
+  if (report.fees) righe.push({ kind: 'change', text: `Trattenute Stripe: ${euro(report.fees)}` });
   righe.push({ kind: 'footer', text: `Totale netto: ${euro(report.net)}` });
+
+  // Con gli ordini in mano stampiamo anche il dettaglio, uno per riga: numero,
+  // pezzi, metodo e netto. Cosi' il foglio di cassa spiega da dove nasce la
+  // cifra, non e' solo un totale.
+  if (Array.isArray(orders)) {
+    const dettaglio = shiftBreakdown(orders, date, shift);
+    if (dettaglio.rows.length) {
+      righe.push({ kind: 'separator', text: '' });
+      righe.push({ kind: 'meta', text: 'Dettaglio ordini' });
+      for (const row of dettaglio.rows) {
+        const numero = `#${String(row.number ?? '').padStart(2, '0')}`;
+        const metodo = IN_CASSA[row.paymentMethod] ?? row.paymentMethod;
+        const nota = row.online ? ' online' : '';
+        righe.push({ kind: 'item', text: `${numero} ${row.pizzas}pz ${metodo}${nota}: ${euro(row.net)}` });
+      }
+    }
+  }
+
   return righe;
 }

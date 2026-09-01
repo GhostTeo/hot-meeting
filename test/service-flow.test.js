@@ -4,6 +4,7 @@ import {
   buildCloseDialog,
   closeService,
   nextServiceSequence,
+  ovenPanel,
   reopenService,
   servicePanel,
   serviceAcceptsOrders,
@@ -313,4 +314,24 @@ test('le eccezioni normalizzano il messaggio pubblico prima di raggiungere il da
   assert.deepEqual(openingException({ date: '2026-08-15', message: 'Ferragosto' }), {
     date: '2026-08-15', closed: false, message: 'Ferragosto'
   });
+});
+
+test('il pannello forno si puo modificare anche senza servizio aperto', () => {
+  // Il forno e' una proprieta' fissa: il Creator deve poter cambiare i numeri
+  // a locale chiuso, non solo a servizio aperto (era il bug "non mi fa modificare").
+  const chiuso = ovenPanel({ services: {}, ovenDefaults: { slots: 8, bakeMinutes: 3, bufferMinutes: 6 } });
+  assert.match(chiuso, /id="oven-form"/);
+  assert.match(chiuso, /value="8"/);
+  assert.match(chiuso, /value="3"/);
+  assert.match(chiuso, /value="6"/);
+});
+
+test('il pannello forno preferisce il servizio aperto quando c e', () => {
+  const aperto = ovenPanel({
+    services: { dinner: { status: 'open', oven: { slots: 6, bakeMinutes: 4, bufferMinutes: 5 } } },
+    ovenDefaults: { slots: 99, bakeMinutes: 1, bufferMinutes: 0 }
+  });
+  assert.match(aperto, /value="6"/);
+  assert.match(aperto, /value="4"/);
+  assert.match(aperto, /value="5"/);
 });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { countdownText, waitingProgress, waitingStage } from '../js/views/waiting-room.js';
+import { countdownText, waitingProgress, waitingStage, shouldForgetReceipt } from '../js/views/waiting-room.js';
 
 // Chi aspetta vuole sapere due cose: a che punto e', e quando uscire di casa.
 
@@ -55,4 +55,25 @@ test('la barra si riempie sui secondi, cosi si muove sotto gli occhi', () => {
   assert.equal(waitingProgress(promessi, promessi), 0);
   assert.equal(waitingProgress(promessi / 2, promessi), 50);
   assert.equal(waitingProgress(0, promessi), 97);
+});
+
+test('un ordine consegnato viene dimenticato alla riapertura, cosi il cliente torna al menu', () => {
+  // Terminato = consegnato: alla riapertura dell'app il cliente deve trovarsi al
+  // menu, non fermo sull'attesa dell'ordine di prima.
+  assert.equal(shouldForgetReceipt({ receipt: { id: 'a', readyAt: 1000 }, receiptDone: true, now: 2000 }), true);
+});
+
+test('un ordine ancora in corso resta in attesa alla riapertura', () => {
+  const now = 1_000_000;
+  assert.equal(shouldForgetReceipt({ receipt: { id: 'a', readyAt: now + 60_000 }, receiptDone: false, now }), false);
+});
+
+test('un ordine vecchio di ore viene dimenticato anche senza conferma di consegna', () => {
+  const now = Date.parse('2026-09-01T21:00:00Z');
+  const treOreFa = now - 3 * 60 * 60 * 1000;
+  assert.equal(shouldForgetReceipt({ receipt: { id: 'a', readyAt: treOreFa }, receiptDone: false, now }), true);
+});
+
+test('senza ricevuta non c e nulla da dimenticare', () => {
+  assert.equal(shouldForgetReceipt({ receipt: null, receiptDone: false, now: 1 }), false);
 });

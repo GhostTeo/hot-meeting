@@ -10,6 +10,7 @@
 // l'ordine di creazione.
 
 import { translateToEnglish, translationCoverage } from '../translate-menu.js';
+import { filterMenu } from '../menu-catalog.js';
 
 function euro(value) {
   return Number(value || 0).toFixed(2);
@@ -22,7 +23,7 @@ function cents(value) {
 export function emptyDraft() {
   return {
     id: null, type: 'pizza', name: '', description: '', descriptionEn: '',
-    price: '', available: true, sortOrder: 0, imageUrl: '',
+    price: '', available: true, weekly: false, sortOrder: 0, imageUrl: '',
     ingredients: '', additions: [], allergenIds: []
   };
 }
@@ -36,6 +37,7 @@ export function draftFromProduct(product = {}) {
     descriptionEn: product.descriptions?.en ?? '',
     price: euro(product.price),
     available: product.available !== false,
+    weekly: product.weekly === true,
     sortOrder: Number(product.sortOrder ?? 0),
     imageUrl: product.imageUrl ?? '',
     ingredients: (product.ingredients ?? []).join(', '),
@@ -110,25 +112,34 @@ function escapeHtml(value = '') {
 
 const TYPE_LABELS = { pizza: 'Pizza', drink: 'Bibita' };
 
-export function menuPanel(menu = [], draft = null, allergens = [], money = value => `${value}`, canUpload = false) {
+export function menuPanel(menu = [], draft = null, allergens = [], money = value => `${value}`, canUpload = false, query = '') {
   const senzaFoto = menu.filter(product => !product.imageUrl).length;
   return `<h1>Menu</h1>
     <div class="actions"><button class="btn primary" id="menu-new">+ Nuovo prodotto</button></div>
+    <div class="field menu-search-field"><input id="menu-search" type="search" value="${escapeHtml(query)}" placeholder="Cerca: pizza, bibita, un ingrediente (es. salame piccante)…" autocomplete="off"></div>
     ${senzaFoto ? `<p class="editor-note">${senzaFoto} senza foto: nel menu compaiono con uno sfondo colorato al posto dell'immagine.</p>` : ''}
-    <div class="grid">${menu.map(product => menuCard(product, money)).join('') || '<p>Nessun prodotto: creane uno.</p>'}</div>
+    <div class="grid" id="menu-list">${menuList(menu, money, query)}</div>
     ${draft ? menuEditor(draft, allergens, canUpload) : ''}`;
+}
+
+export function menuList(menu = [], money = value => `${value}`, query = '') {
+  const visibili = filterMenu(menu, query);
+  if (!menu.length) return '<p>Nessun prodotto: creane uno.</p>';
+  if (!visibili.length) return `<p>Nessun prodotto trovato per "${escapeHtml(String(query).trim())}".</p>`;
+  return visibili.map(product => menuCard(product, money)).join('');
 }
 
 function menuCard(product, money) {
   return `<article class="card menu-card">
     ${product.imageUrl ? `<img class="menu-thumb" src="${escapeHtml(product.imageUrl)}" alt="" loading="lazy">` : ''}
-    <span class="pill">${escapeHtml(TYPE_LABELS[product.type] ?? product.type ?? '')}${product.available ? '' : ' · non disponibile'}</span>
+    <span class="pill">${escapeHtml(TYPE_LABELS[product.type] ?? product.type ?? '')}${product.available ? '' : ' · non disponibile'}${product.weekly ? ' · della settimana' : ''}</span>
     <h2>${escapeHtml(product.name ?? '')}</h2>
     <p>${escapeHtml((product.ingredients ?? []).join(', '))}</p>
     <p class="price">${money(Number(product.price ?? 0))}</p>
     <div class="actions">
       <button class="btn primary menu-edit" data-id="${escapeHtml(product.id)}">Modifica</button>
       <button class="btn secondary availability" data-id="${escapeHtml(product.id)}">${product.available ? 'Togli dal menu' : 'Rimetti nel menu'}</button>
+      ${product.type === 'pizza' ? `<button class="btn secondary weekly-toggle" data-id="${escapeHtml(product.id)}">${product.weekly ? 'Togli dalla settimana' : 'Pizza della settimana'}</button>` : ''}
       <button class="btn secondary menu-delete" data-id="${escapeHtml(product.id)}">Elimina</button>
     </div>
   </article>`;

@@ -50,3 +50,20 @@ test('il foglio da appendere in cassa dice giornata, turno e ogni voce', () => {
   assert.ok(testo.includes('Contanti'));
   assert.ok(testo.includes('Ordini'));
 });
+
+test('con gli ordini il foglio elenca ogni ordine e separa cassetto ed elettronico', () => {
+  const righe = cashReportLines(cashReport(ordini, '2026-08-27', 'dinner'), { date: '2026-08-27', shift: 'dinner', orders: ordini });
+  const testo = righe.map(riga => riga.text).join('\n');
+
+  // Sezione dettaglio: ogni ordine chiuso compare con il suo numero/metodo.
+  assert.ok(testo.includes('Dettaglio ordini'));
+  // Il cassetto (contanti) e l'elettronico sono chiamati per nome nel riepilogo.
+  assert.ok(testo.includes('Nel cassetto'));
+  assert.ok(testo.includes('Elettronico'));
+});
+
+test('senza ordini il foglio resta quello sintetico di prima', () => {
+  const righe = cashReportLines(cashReport(ordini, '2026-08-27', 'dinner'), { date: '2026-08-27', shift: 'dinner' });
+  const testo = righe.map(riga => riga.text).join('\n');
+  assert.ok(!testo.includes('Dettaglio ordini'));
+});

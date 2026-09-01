@@ -41,3 +41,49 @@ function reportForPeriod(orders, period, shift) {
 export function dailyReport(orders, businessDate, shift) {
   return reportForPeriod(orders, { from: businessDate, to: businessDate }, shift);
 }
+
+function round2(value) {
+  return Number(Number(value ?? 0).toFixed(2));
+}
+
+// Il dettaglio dietro l'incasso di un turno: una riga per ordine chiuso, con
+// lordo, trattenute (quello che Stripe tiene sui pagamenti online) e netto.
+// Serve al Creator per capire da dove arriva la cifra e cosa gli resta davvero.
+export function shiftBreakdown(orders, businessDate, shift) {
+  const rows = (orders || [])
+    .filter(order => order.businessDate === businessDate)
+    .filter(order => COMPLETED_ORDER_STATUSES.has(order.status))
+    .filter(order => !shift || order.shift === shift)
+    .map(order => {
+      const adjustments = adjustmentTotals(order.adjustments);
+      const gross = round2(Number(order.gross || 0) + adjustments.supplements);
+      const fees = round2(Number(order.fees || 0));
+      const refunds = round2(adjustments.refunds);
+      const net = round2(gross - fees - refunds);
+      return {
+        number: order.sequence ?? null,
+        gross,
+        fees,
+        refunds,
+        net,
+        pizzas: pizzaCount(order),
+        paymentMethod: order.paymentMethod ?? 'cash',
+        // Pagato online = incassato tramite Stripe: e' quello su cui c'e' una
+        // trattenuta e che non entra nel cassetto contanti.
+        online: order.paymentStatus === 'paid' || Boolean(order.stripeSessionId)
+      };
+    })
+    .sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+
+  const totals = rows.reduce((total, row) => {
+    total.orders += 1;
+    total.pizzas += row.pizzas;
+    total.gross = round2(total.gross + row.gross);
+    total.fees = round2(total.fees + row.fees);
+    total.refunds = round2(total.refunds + row.refunds);
+    total.net = round2(total.net + row.net);
+    return total;
+  }, { orders: 0, pizzas: 0, gross: 0, fees: 0, refunds: 0, net: 0 });
+
+  return { businessDate, shift: shift ?? null, rows, totals };
+}
