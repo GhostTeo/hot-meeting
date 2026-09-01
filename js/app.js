@@ -150,9 +150,12 @@ function customer(){
 // La foto e' il primo argomento di vendita: quando manca si mostra comunque un
 // riquadro caldo, mai un'immagine rotta.
 function dishPhoto(product,variant='dish'){
+  // Senza foto, un'icona adatta al tipo: una fetta per la pizza, un bicchiere o
+  // un boccale per le bibite. Una pizza sopra l'acqua sembrava un errore.
+  const segnaposto=product.emoji||(product.type==='drink'?(/birra/i.test(pname(product))?'\u{1F37A}':'\u{1F964}'):'\u{1F355}');
   const inner=product.imageUrl
     ? `<img src="${esc(product.imageUrl)}" alt="${esc(pname(product))}" loading="lazy" decoding="async">`
-    : `<span class="emoji">${product.emoji||'\u{1F355}'}</span>`;
+    : `<span class="emoji">${segnaposto}</span>`;
   const base=variant==='modal'?'modal-photo':'dish-photo';
   return `<div class="${base}${product.imageUrl?'':' empty'}">${inner}</div>`;
 }
