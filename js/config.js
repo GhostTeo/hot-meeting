@@ -11,5 +11,10 @@ export const appConfig = globalThis.HOT_MEETING_CONFIG ?? {
   mode: 'supabase',
   pizzeriaPhone: '3467095833',
   supabaseUrl: 'https://nzoqtfbvyhemclwmwyah.supabase.co',
-  supabaseAnonKey: 'sb_publishable_jEkf-urcoWX9eozzebbrrw_OXnd4t45'
+  supabaseAnonKey: 'sb_publishable_jEkf-urcoWX9eozzebbrrw_OXnd4t45',
+  // Indirizzo della funzione che apre il pagamento su Stripe. Finche' resta
+  // vuoto, il pagamento online e' spento e si paga in cassa: si accende
+  // incollando qui l'indirizzo della funzione, dopo aver messo le chiavi di
+  // Stripe fra i segreti su Supabase (vedi docs/pagamenti-stripe.md).
+  stripeEndpoint: ''
 };

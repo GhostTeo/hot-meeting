@@ -25,6 +25,7 @@ import { countdownText, waitingProgress } from './views/waiting-room.js';
 import { groupCartLines, groupOrderItems, isPlain, plainCartCount } from './cart-lines.js';
 import { loginProblem } from './login-errors.js';
 import { statoConnessione } from './connessione.js';
+import { pagaOnline, urlCheckout } from './pagamento-online.js';
 import { nameCheck, normalizePhoneNumber, phoneProblem } from './customer-identity.js';
 import { kitchenPanel } from './views/kitchen.js';
 import { appConfig } from './config.js';
@@ -442,6 +443,16 @@ function bind(){
       // Numero pubblico e totale li decide il server: l'anteprima locale
       // servirebbe solo a mostrare un numero che poi cambia.
       const receipt=await repository.createOrder(order);
+      // Se il pagamento e' online e Stripe e' acceso, il cliente va a pagare
+      // PRIMA di vedere la ricevuta: la comanda partira' quando Stripe conferma.
+      if(pagaOnline(dati,appConfig)){
+        try{
+          const url=await urlCheckout({id:receipt?.id??order.id,requestToken:order.requestToken},appConfig);
+          state.cart=[];confirming=null;state.contact=null;save();
+          window.location.href=url;
+          return;
+        }catch(errore){toast(errore?.message||'Pagamento non avviato.');return}
+      }
       const promessi=Number(receipt?.etaMinutes??eta);
       state.receipt=buildCustomerRecap({
         ...order,...receipt,
@@ -730,6 +741,19 @@ function bind(){
   const dialog=document.querySelector('.dialog-card');
   if(dialog)releaseDialogTrap=trapDialogFocus(dialog,finishDialog);
 }
+// Ritorno da Stripe: se il cliente ha pagato, si mostra la sala d'attesa del suo
+// ordine; se ha annullato, un avviso gentile. Il segno «pagato» lo mette il
+// webhook dal server: qui si legge soltanto lo stato.
+(function ritornoDaStripe(){
+  const q=new URLSearchParams(location.search);
+  const pagato=q.get('pagato'),annullato=q.get('annullato');
+  if(!pagato&&!annullato)return;
+  history.replaceState(null,'',location.pathname);
+  if(annullato){toast('Pagamento annullato. L ordine non e stato inviato.');return}
+  // La ricevuta minima: il resto (numero, stato) arriva dal server.
+  state.receipt={id:pagato,token:null,code:'',customer:'',phone:'',payment:'',total:0,minutes:null,readyAt:null,items:[],pizzeriaPhone:appConfig.pizzeriaPhone??null};
+  toast('Pagamento ricevuto. La tua pizza e in coda.');
+})();
 try{await stateRefresh.refresh()}catch{}
 // Un browser non suona finche' la pagina non e' stata toccata: al primo tocco
 // si prepara il trillo, cosi' e' pronto quando serve.

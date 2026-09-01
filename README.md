@@ -246,6 +246,20 @@ browser non lasciano suonare una pagina finche' non e' stata toccata almeno una
 volta: in cassa si tocca comunque, e prima di allora nessun ordine puo' essere
 arrivato.
 
+## Pagamenti online (Stripe)
+
+Il pagamento con carta, Apple Pay o Google Pay passa da Stripe, e Stripe vive su
+un pezzo che gira sul server (una Edge Function di Supabase): la chiave che
+autorizza gli incassi e' segreta e nel browser non ci sta. Il totale lo legge il
+server dal database, mai dal browser; l'ordine diventa «pagato» solo quando il
+webhook di Stripe conferma, dopo aver verificato la firma del messaggio. Provato
+che dal browser nessuno puo' segnarsi pagato da solo.
+
+Resta **spento** finche' non ci sono le chiavi: `stripeEndpoint` vuoto in
+`js/config.js` = si paga in cassa, il sito e' identico a prima. Come accenderlo
+in `docs/pagamenti-stripe.md`. Il nodo aperto e' fiscale, non tecnico: come i
+pagamenti online arrivano al Registratore Telematico lo decide il commercialista.
+
 ## Sala d'attesa
 
 Dopo la conferma il cliente non resta con una ricevuta muta: vede a che punto e'
