@@ -1090,3 +1090,13 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 /* Ricerca fra le aggiunte nel personalizzatore. */
 .add-search-field { margin: 4px 0 10px; }
 .add-search-field input { width: 100%; }
+
+/* Schede del menu Creator + sezione Ingredienti. */
+.menu-tabs { display: flex; gap: 8px; margin: 4px 0 12px; flex-wrap: wrap; }
+.menu-tabs .btn { flex: 1 1 auto; min-width: 90px; }
+.ingredient-card h2 { font-size: 1.05rem; margin: 0 0 8px; }
+.ingredient-card.ingredient-off { opacity: .7; border: 1px solid var(--accent); }
+.ingredient-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ingredient-price { display: flex; align-items: center; gap: 6px; font-size: .9rem; color: var(--ink-soft); }
+.ingredient-price-input { width: 90px; }
+.ingredient-note { margin: 8px 0 0; color: var(--accent-dark); font-weight: 600; font-size: .88rem; }

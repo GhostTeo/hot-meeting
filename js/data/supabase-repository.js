@@ -20,6 +20,21 @@ function names(translations = [], fallback = '') {
   return en ? { it, en } : { it };
 }
 
+// Il catalogo ingredienti per il Creator: nome italiano, prezzo dell'aggiunta e
+// disponibilita'. Ordinato per nome cosi' e' facile cercarlo.
+function mapIngredientCatalog(rows = []) {
+  return (rows ?? [])
+    .map(row => ({
+      id: row.id,
+      slug: row.slug,
+      name: italianName(row.ingredient_translations, row.slug),
+      names: names(row.ingredient_translations, row.slug),
+      price: Number(row.additional_price_cents ?? 0) / 100,
+      available: row.available !== false
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function mapProduct(row) {
   const relations = row.product_ingredients ?? [];
   const included = relations.filter(relation => relation.is_included);
@@ -325,6 +340,7 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       let totalRows = [];
       let closureRows = null;
       let adjustmentRows = [];
+      let ingredientRows = [];
       if (accessModeValue(accessMode) === 'creator') {
         const operationalResults = await Promise.all([
           orderedQuery(client, 'business_days', '*', 'business_date', false),
@@ -334,14 +350,18 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
           orderedQuery(client, 'current_order_item_changes', '*', 'created_at'),
           orderedQuery(client, 'current_order_totals', '*', 'created_at'),
           orderedQuery(client, 'closures', '*', 'created_at'),
-          orderedQuery(client, 'current_payment_adjustments', '*', 'created_at')
+          orderedQuery(client, 'current_payment_adjustments', '*', 'created_at'),
+          // Il catalogo ingredienti completo (anche i non disponibili): serve al
+          // Creator per gestire prezzo e disponibilita' di ogni ingrediente.
+          client.from('ingredients').select('id, slug, additional_price_cents, available, sort_order, ingredient_translations(locale, name)')
         ]);
         const operationalFailure = operationalResults.find(result => result.error);
         if (operationalFailure) throw operationalFailure.error;
-        [dayRows, creatorServices, orderRows, itemRows, changeRows, totalRows, closureRows, adjustmentRows] = operationalResults.map(result => result.data);
+        [dayRows, creatorServices, orderRows, itemRows, changeRows, totalRows, closureRows, adjustmentRows, ingredientRows] = operationalResults.map(result => result.data);
       }
 
       const menu = productRows.map(mapProduct);
+      const ingredients = mapIngredientCatalog(ingredientRows);
       const selectedServices = creatorServices.length ? creatorServices : publicServices;
       const mappedServices = selectedServices
         .map(mapService)
@@ -367,6 +387,7 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       const activeService = activeDayServices.find(service => service.status === 'open') ?? null;
       const snapshot = {
         menu,
+        ingredients,
         calendar: calendarFromClosures(closureRows ?? publicClosures),
         // L'ordine dei 14 allergeni UE e' quello di legge: lo si applica qui
         // cosi' resta lo stesso qualunque cosa restituisca il trasporto.
@@ -423,6 +444,25 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       const row = throwIfError(result);
       const saved = { ...product, weekly: row.weekly ?? Boolean(weekly) };
       await cache?.saveProduct(saved);
+      return saved;
+    },
+
+    // Prezzo e disponibilita' di un ingrediente. La regola RLS lascia scrivere la
+    // tabella ingredients solo al Creator; un ingrediente reso non disponibile
+    // sparisce da solo dalle pizze che lo contengono (lato cliente).
+    async saveIngredient(ingredient) {
+      if (!ingredient.id) throw new TypeError('L\'ingrediente richiede un id');
+      const patch = {};
+      if (ingredient.price !== undefined) patch.additional_price_cents = Math.max(0, Math.round(Number(ingredient.price) * 100));
+      if (ingredient.available !== undefined) patch.available = Boolean(ingredient.available);
+      const result = await client.from('ingredients').update(patch).eq('id', ingredient.id).select('id, additional_price_cents, available').maybeSingle();
+      const row = throwIfError(result);
+      const saved = {
+        ...ingredient,
+        price: row?.additional_price_cents != null ? row.additional_price_cents / 100 : ingredient.price,
+        available: row?.available ?? ingredient.available
+      };
+      await cache?.saveIngredient?.(saved);
       return saved;
     },
 

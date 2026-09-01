@@ -125,7 +125,7 @@ test('hydration remota compone menu, giornata, servizi e viste correnti ordini',
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
     'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'pizzeria_settings', 'business_days', 'services', 'orders',
     'current_order_items', 'current_order_item_changes', 'current_order_totals', 'closures',
-    'current_payment_adjustments'
+    'current_payment_adjustments', 'ingredients'
   ]);
 });
 

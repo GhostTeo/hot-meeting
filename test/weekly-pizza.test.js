@@ -99,3 +99,19 @@ test('se una pizza e gia contrassegnata, l auto-scelta non serve (resta null)', 
   const pizze = [{ id: 'a', type: 'pizza', available: true, weekly: true }, { id: 'b', type: 'pizza', available: true }];
   assert.equal(autoWeeklyPizza(pizze, new Date('2026-09-01T12:00:00Z')), null);
 });
+
+import { ingredientCatalog } from '../js/menu-catalog.js';
+
+test('il catalogo ingredienti raccoglie ingredienti e aggiunte da tutte le pizze, senza doppioni', () => {
+  const menu = [
+    { type: 'pizza', ingredients: ['Pomodoro', 'Mozzarella'], additions: [{ name: 'Salame piccante', price: 2 }] },
+    { type: 'pizza', ingredients: ['Pomodoro', 'Basilico'], additions: [{ name: 'Bufala', price: 2.5 }] },
+    { type: 'drink', ingredients: [], additions: [] }
+  ];
+  const cat = ingredientCatalog(menu);
+  const nomi = cat.map(i => i.name);
+  assert.deepEqual([...nomi].sort(), ['Basilico', 'Bufala', 'Mozzarella', 'Pomodoro', 'Salame piccante']);
+  const salame = cat.find(i => i.name === 'Salame piccante');
+  assert.equal(salame.price, 2);
+  assert.equal(salame.available, true);
+});

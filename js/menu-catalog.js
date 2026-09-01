@@ -54,6 +54,31 @@ export const DEFAULT_PIZZA_ADDITIONS = [
 // Restituisce le aggiunte di una pizza con SEMPRE dentro doppia mozzarella e
 // doppio pomodoro. Se il menu ne ha gia' una (magari con un prezzo diverso), si
 // tiene quella e non si duplica. Le bibite non ne ricevono.
+// Deriva un catalogo di ingredienti dal menu (per la modalita' demo/locale,
+// dove non c'e' la tabella ingredienti del database): raccoglie ingredienti
+// inclusi e aggiunte da tutte le pizze, senza doppioni (per nome). Il prezzo e'
+// quello dell'aggiunta se c'e', altrimenti 0; disponibili di default.
+export function ingredientCatalog(menu = []) {
+  const perNome = new Map();
+  const aggiungi = (nome, price, isAddition) => {
+    const chiave = String(nome ?? '').trim();
+    if (!chiave) return;
+    const k = chiave.toLowerCase();
+    const esistente = perNome.get(k);
+    if (!esistente) {
+      perNome.set(k, { id: `local:${k}`, name: chiave, price: Number(price || 0), available: true });
+    } else if (isAddition && Number(price || 0) > 0 && !esistente.price) {
+      esistente.price = Number(price);
+    }
+  };
+  for (const prodotto of menu || []) {
+    if (prodotto.type !== 'pizza') continue;
+    for (const nome of prodotto.ingredients ?? []) aggiungi(nome, 0, false);
+    for (const add of prodotto.additions ?? []) aggiungi(add?.name, add?.price, true);
+  }
+  return [...perNome.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function withDefaultAdditions(product = {}) {
   const additions = [...(product.additions ?? [])];
   if (product.type !== 'pizza') return additions;

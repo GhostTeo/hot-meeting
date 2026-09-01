@@ -9,7 +9,7 @@ import { addLine, draftFromOrder, draftIsValid, draftItems, draftTotal, setNote,
 import { calculateAdjustment } from './payments.js';
 import { LOCALES, translate, translatePaymentMethod, translateProduct } from './i18n.js';
 import { buildCustomerRecap, orderReceiptPanel } from './views/order-receipt.js';
-import { additionRow, draftFromProduct, emptyDraft, menuPanel, menuList, menuProductPayload } from './views/menu-editor.js';
+import { additionRow, draftFromProduct, emptyDraft, menuPanel, menuList, ingredientCatalogList, menuProductPayload } from './views/menu-editor.js';
 import { counterOrderIssues, counterOrderPanel, counterOrderPayload } from './views/counter-order.js';
 import { orderDetailPanel } from './views/order-detail.js';
 import { closingSteps, workingOrders } from './views/order-flow.js';
@@ -24,7 +24,7 @@ import { orderSuggestions } from './suggestions.js';
 import { countdownText, waitingProgress, shouldForgetReceipt } from './views/waiting-room.js';
 import { groupCartLines, groupOrderItems, isPlain, plainCartCount } from './cart-lines.js';
 import { openingStatus } from './opening-hours.js';
-import { weeklyPizzas, regularPizzas, withDefaultAdditions, autoWeeklyPizza } from './menu-catalog.js';
+import { weeklyPizzas, regularPizzas, withDefaultAdditions, autoWeeklyPizza, ingredientCatalog } from './menu-catalog.js';
 import { loginProblem } from './login-errors.js';
 import { statoConnessione } from './connessione.js';
 import { pagaOnline, urlCheckout } from './pagamento-online.js';
@@ -44,7 +44,7 @@ let state=load();
 // tempo), lo dimentichiamo cosi' il cliente riparte dal menu invece di ritrovarsi
 // fermo sull'attesa di prima.
 if(shouldForgetReceipt({receipt:state.receipt,receiptDone:state.receiptDone,now:Date.now()})){state.receipt=null;state.receiptDone=false;save()}
-const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='orders'; let customizing=null; let confirming=null; let pendingName=null; let askedName=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let ultimoContatto=null; let orderProgress=null; let progressTimer=null; let printed=new Set(); let incomeDetail=undefined; let menuFilter='';
+const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='orders'; let customizing=null; let confirming=null; let pendingName=null; let askedName=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let ultimoContatto=null; let orderProgress=null; let progressTimer=null; let printed=new Set(); let incomeDetail=undefined; let menuFilter=''; let menuTab='pizza';
 let seenOrders=new Set(JSON.parse(localStorage.getItem('hm-seen-orders')||'[]')); let autoPrint=localStorage.getItem('hm-autoprint')==='1';
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
@@ -174,17 +174,35 @@ function customer(){
     ${pendingName?namePanel():''}`;
 }
 
-// La foto e' il primo argomento di vendita: quando manca si mostra comunque un
-// riquadro caldo, mai un'immagine rotta.
+// Foto prese online: se il prodotto non ha una foto sua, ne mostriamo una
+// appetitosa presa da un catalogo di immagini libere (Unsplash), scelta in modo
+// stabile dal nome cosi' ogni pizza mostra sempre la stessa. La foto vera
+// caricata dal locale ha sempre la precedenza.
+const _PIZZA_FOTO=[
+  'https://images.unsplash.com/photo-1513104890138-7c749659a591',
+  'https://images.unsplash.com/photo-1571407970349-bc81e7e96d47',
+  'https://images.unsplash.com/photo-1574071318508-1cdbab80d002',
+  'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38',
+  'https://images.unsplash.com/photo-1604382354936-07c5d9983bd3',
+  'https://images.unsplash.com/photo-1593560708920-61dd98c46a4e'
+];
+const _BIBITA_FOTO=[
+  'https://images.unsplash.com/photo-1600271886742-f049cd451bba',
+  'https://images.unsplash.com/photo-1581006852262-e4307cf6283a',
+  'https://images.unsplash.com/photo-1608270586620-248524c67de9',
+  'https://images.unsplash.com/photo-1437418747212-8d9709afab22'
+];
+function _hash(str){let h=0;for(const ch of String(str||'')){h=(h*31+ch.charCodeAt(0))|0}return Math.abs(h)}
+function dishImage(product){
+  if(product.imageUrl)return product.imageUrl;
+  const pool=product.type==='drink'?_BIBITA_FOTO:_PIZZA_FOTO;
+  return `${pool[_hash(product.id||product.name)%pool.length]}?w=600&q=70&auto=format&fit=crop`;
+}
 function dishPhoto(product,variant='dish'){
-  // Senza foto, un'icona adatta al tipo: una fetta per la pizza, un bicchiere o
-  // un boccale per le bibite. Una pizza sopra l'acqua sembrava un errore.
-  const segnaposto=product.emoji||(product.type==='drink'?(/birra/i.test(pname(product))?'\u{1F37A}':'\u{1F964}'):'\u{1F355}');
-  const inner=product.imageUrl
-    ? `<img src="${esc(product.imageUrl)}" alt="${esc(pname(product))}" loading="lazy" decoding="async">`
-    : `<span class="emoji">${segnaposto}</span>`;
+  const url=dishImage(product);
+  const inner=`<img src="${esc(url)}" alt="${esc(pname(product))}" loading="lazy" decoding="async">`;
   const base=variant==='modal'?'modal-photo':'dish-photo';
-  return `<div class="${base}${product.imageUrl?'':' empty'}">${inner}</div>`;
+  return `<div class="${base}">${inner}</div>`;
 }
 
 function dishCard(p,closed,weekly=false){
@@ -281,6 +299,7 @@ function loginPanel(titolo,sottotitolo){return `<div class="card login-card"><sp
 function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');const nuovi=ordiniNuovi();return `${spiaConnessione()}${editorDraft?orderEditorPanel(editorDraft,state.menu,money,editorOpenLine,editorAdding):''}<div class="admin"><aside class="sidebar">${SEZIONI.map(([id,icona,nome])=>`<button class="btn ${adminSection===id?'primary':'secondary'} admin-nav" data-section="${id}"><span class="nav-ic" aria-hidden="true">${icona}</span>${nome}${id==='orders'&&nuovi?`<span class="badge">${nuovi}</span>`:''}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
 function ordersWithAdjustments(){const movements=state.adjustments||[];return (state.orders||[]).map(order=>({...order,adjustments:movements.filter(movement=>String(movement.orderId)===String(order.id))}))}
 function detailOrder(){return detailOrderId?(state.orders||[]).find(o=>String(o.id)===String(detailOrderId)):null}
+function ingredientList(){return (state.ingredients&&state.ingredients.length)?state.ingredients:ingredientCatalog(state.menu)}
 function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders'){
   // Qui stanno solo gli ordini ancora da fare: cliccato «Pronto» l'ordine
   // sparisce da questa lista e resta nello Storico, dove si ritrova sempre.
@@ -290,7 +309,7 @@ function adminContent(){if(adminSection==='service')return servicePanel(state,Da
   const attesa=waitMinutes(1);
   return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dalla pizzeria</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div><p class="history-count">${pizzasAhead()} pizze in coda · un ordine di una pizza esce fra ${attesa} minuti</p>${daFare.map(orderCard).join('')||'<div class="card"><h2>Nessun ordine aperto</h2><p>Quelli consegnati sono nello Storico.</p></div>'}${counterDraft?counterOrderPanel(counterDraft,state.menu,money,DEMO_PAYMENT_METHODS):''}${detailOrder()?orderDetailPanel(detailOrder(),money):''}`;
 }
-if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||[],money,typeof repository.uploadProductPhoto==='function',menuFilter);const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();
+if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||[],money,typeof repository.uploadProductPhoto==='function',menuFilter,menuTab,ingredientList());const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();
   return `<h1>Report</h1><p class="history-count">Giornata ${day||'non ancora aperta'}</p>
     <p class="editor-note">Tocca un incasso per vedere ordine per ordine da dove arriva e cosa trattiene Stripe.</p>
     <div class="grid">${reportCard('Pranzo','lunch',dailyReport(rows,day,'lunch'))}${reportCard('Serale','dinner',dailyReport(rows,day,'dinner'))}${reportCard('Giornata','',dailyReport(rows,day))}</div>
@@ -757,13 +776,35 @@ function bind(){
     });
   }
   bindMenuCards();
+  bindIngredientCards();
+  // Le tre schede del menu: Pizze / Bibite / Ingredienti.
+  document.querySelectorAll('.menu-tab').forEach(b=>b.onclick=()=>{menuTab=b.dataset.tab;menuFilter='';render()});
   // Ricerca nel menu: filtra la lista mentre scrivi, senza perdere il fuoco del
   // campo (ridisegno solo la griglia, non tutta la schermata).
   document.querySelector('#menu-search')?.addEventListener('input',event=>{
     menuFilter=event.target.value;
     const lista=document.querySelector('#menu-list');
-    if(lista){lista.innerHTML=menuList(state.menu,money,menuFilter);bindMenuCards()}
+    if(!lista)return;
+    if(menuTab==='ingredienti'){lista.innerHTML=ingredientCatalogList(ingredientList(),money,menuFilter);bindIngredientCards()}
+    else{lista.innerHTML=menuList(state.menu,money,menuFilter,menuTab);bindMenuCards()}
   });
+  function bindIngredientCards(){
+    // Prezzo dell'aggiunta: si salva quando esci dal campo.
+    document.querySelectorAll('.ingredient-price-input').forEach(inp=>inp.onchange=async()=>{
+      const ing=ingredientList().find(i=>String(i.id)===inp.dataset.id);if(!ing)return;
+      const prezzo=Number(String(inp.value).replace(',','.'));
+      if(!(prezzo>=0))return toast('Prezzo non valido.');
+      try{await repository.saveIngredient({...ing,price:prezzo});ing.price=prezzo;await stateRefresh.refresh();toast(`Prezzo di ${ing.name} aggiornato.`)}
+      catch(error){toast(error?.message?`Non salvato: ${error.message}`:'Non salvato.')}
+    });
+    // Disponibilità: esaurito/rimetti.
+    document.querySelectorAll('.ingredient-avail').forEach(b=>b.onclick=async()=>{
+      const ing=ingredientList().find(i=>String(i.id)===b.dataset.id);if(!ing)return;
+      const prossimo=!(ing.available!==false);
+      try{await repository.saveIngredient({...ing,available:prossimo});ing.available=prossimo;await stateRefresh.refresh();render();toast(prossimo?`${ing.name}: di nuovo disponibile.`:`${ing.name}: segnato esaurito.`)}
+      catch(error){toast(error?.message?`Non salvato: ${error.message}`:'Non salvato.')}
+    });
+  }
   document.querySelector('#menu-close')?.addEventListener('click',()=>{menuDraft=null;render()});
   document.querySelector('#menu-photo-clear')?.addEventListener('click',()=>{menuDraft={...readMenuDraft(),imageUrl:''};render()});
   document.querySelector('#menu-photo-file')?.addEventListener('change',async event=>{

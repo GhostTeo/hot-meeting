@@ -112,21 +112,51 @@ function escapeHtml(value = '') {
 
 const TYPE_LABELS = { pizza: 'Pizza', drink: 'Bibita' };
 
-export function menuPanel(menu = [], draft = null, allergens = [], money = value => `${value}`, canUpload = false, query = '') {
-  const senzaFoto = menu.filter(product => !product.imageUrl).length;
+const MENU_TABS = [
+  { id: 'pizza', label: 'Pizze' },
+  { id: 'drink', label: 'Bibite' },
+  { id: 'ingredienti', label: 'Ingredienti' }
+];
+
+export function menuPanel(menu = [], draft = null, allergens = [], money = value => `${value}`, canUpload = false, query = '', tab = 'pizza', ingredients = []) {
+  const tabAttiva = MENU_TABS.some(t => t.id === tab) ? tab : 'pizza';
+  const cerca = tabAttiva === 'ingredienti' ? 'Cerca un ingrediente (es. salame piccante)…' : 'Cerca per nome o ingrediente…';
+  const placeholderNuovo = tabAttiva === 'drink' ? '+ Nuova bibita' : '+ Nuova pizza';
   return `<h1>Menu</h1>
-    <div class="actions"><button class="btn primary" id="menu-new">+ Nuovo prodotto</button></div>
-    <div class="field menu-search-field"><input id="menu-search" type="search" value="${escapeHtml(query)}" placeholder="Cerca: pizza, bibita, un ingrediente (es. salame piccante)…" autocomplete="off"></div>
-    ${senzaFoto ? `<p class="editor-note">${senzaFoto} senza foto: nel menu compaiono con uno sfondo colorato al posto dell'immagine.</p>` : ''}
-    <div class="grid" id="menu-list">${menuList(menu, money, query)}</div>
+    <div class="menu-tabs">${MENU_TABS.map(t => `<button class="btn ${t.id === tabAttiva ? 'primary' : 'secondary'} menu-tab" data-tab="${t.id}">${t.label}</button>`).join('')}</div>
+    ${tabAttiva === 'ingredienti'
+      ? `<p class="editor-note">Prezzo e disponibilità di ogni ingrediente e aggiunta. Se togli la disponibilità, l'ingrediente sparisce da solo dalle pizze che lo contengono (es. salame piccante esaurito → via dalla Diavola).</p>`
+      : `<div class="actions"><button class="btn primary" id="menu-new">${placeholderNuovo}</button></div>`}
+    <div class="field menu-search-field"><input id="menu-search" type="search" value="${escapeHtml(query)}" placeholder="${cerca}" autocomplete="off"></div>
+    <div class="grid" id="menu-list">${tabAttiva === 'ingredienti' ? ingredientCatalogList(ingredients, money, query) : menuList(menu, money, query, tabAttiva)}</div>
     ${draft ? menuEditor(draft, allergens, canUpload) : ''}`;
 }
 
-export function menuList(menu = [], money = value => `${value}`, query = '') {
-  const visibili = filterMenu(menu, query);
-  if (!menu.length) return '<p>Nessun prodotto: creane uno.</p>';
+export function menuList(menu = [], money = value => `${value}`, query = '', tab = null) {
+  const perTipo = tab ? (menu || []).filter(product => product.type === tab) : menu;
+  const visibili = filterMenu(perTipo, query);
+  if (!perTipo.length) return '<p>Nessun prodotto: creane uno.</p>';
   if (!visibili.length) return `<p>Nessun prodotto trovato per "${escapeHtml(String(query).trim())}".</p>`;
   return visibili.map(product => menuCard(product, money)).join('');
+}
+
+// La sezione Ingredienti del menu Creator: una riga per ingrediente con prezzo
+// (dell'aggiunta) modificabile e disponibilità.
+export function ingredientCatalogList(ingredients = [], money = value => `${value}`, query = '') {
+  const q = String(query ?? '').trim().toLowerCase();
+  const visibili = q ? (ingredients || []).filter(i => String(i.name ?? '').toLowerCase().includes(q)) : (ingredients || []);
+  if (!ingredients.length) return '<p>Nessun ingrediente ancora. Compaiono da soli man mano che li usi nelle pizze.</p>';
+  if (!visibili.length) return `<p>Nessun ingrediente trovato per "${escapeHtml(String(query).trim())}".</p>`;
+  return visibili.map(ing => `<article class="card ingredient-card${ing.available === false ? ' ingredient-off' : ''}">
+    <h2>${escapeHtml(ing.name ?? '')}</h2>
+    <div class="ingredient-row">
+      <label class="ingredient-price">Prezzo aggiunta €
+        <input class="ingredient-price-input" data-id="${escapeHtml(String(ing.id))}" inputmode="decimal" value="${escapeHtml(euro(ing.price))}">
+      </label>
+      <button class="btn ${ing.available === false ? 'primary' : 'secondary'} ingredient-avail" data-id="${escapeHtml(String(ing.id))}">${ing.available === false ? 'Rimetti disponibile' : 'Segna esaurito'}</button>
+    </div>
+    ${ing.available === false ? '<p class="ingredient-note">Esaurito: non compare nelle pizze né come aggiunta.</p>' : ''}
+  </article>`).join('');
 }
 
 function menuCard(product, money) {

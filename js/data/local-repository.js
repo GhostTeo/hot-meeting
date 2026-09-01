@@ -71,6 +71,16 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       return copy(saved);
     },
 
+    async saveIngredient(ingredient) {
+      state.ingredients = state.ingredients ?? [];
+      const index = state.ingredients.findIndex(entry => entry.id === ingredient.id || entry.name?.toLowerCase() === String(ingredient.name).toLowerCase());
+      if (index === -1) state.ingredients.push(copy(ingredient));
+      else state.ingredients[index] = { ...state.ingredients[index], ...copy(ingredient) };
+      persist();
+      emit('menu');
+      return copy(index === -1 ? state.ingredients[state.ingredients.length - 1] : state.ingredients[index]);
+    },
+
     async setWeekly(product, weekly) {
       const entry = state.menu.find(candidate => candidate.id === product.id || candidate.databaseId === product.databaseId);
       if (!entry) throw new Error(`Prodotto ${product.id} non trovato`);
