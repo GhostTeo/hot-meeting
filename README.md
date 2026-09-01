@@ -92,11 +92,23 @@ per progetto sta nel browser: la protezione sono le policy, non la chiave. La
 pagina dichiara una Content Security Policy che impedisce l'esecuzione di script
 estranei anche se qualcuno riuscisse a infilarli.
 
+L'area Creator e' stata attaccata dall'esterno: password sbagliate in serie,
+utente inesistente, autoregistrazione, richiesta di reset password. Nessuna
+apre la porta. Il punto forte non e' il login in se' ma cosa c'e' dietro: chi
+riuscisse a farsi un account otterrebbe solo il ruolo `authenticated`, e ogni
+operazione vera (ordini, incassi, menu, servizi) e' chiusa dietro il ruolo
+`creator`, che si assegna solo dal pannello Supabase. Verificato che nessuna
+regola dia scrittura a `authenticated` senza quel ruolo: le uniche cose leggibili
+senza ruolo sono menu e stato di apertura, cioe' quello che deve essere pubblico.
+
 **Cosa resta scoperto, detto chiaro:** GitHub Pages non lascia impostare gli
 header di sicurezza (c'e' solo HSTS, che mette lui). Non c'e' niente davanti al
-sito che possa filtrare il traffico prima che arrivi al database. E l'accesso
+sito che possa filtrare il traffico prima che arrivi al database. L'accesso
 Creator e' una sola coppia email/password senza secondo fattore: chi la ottiene
-entra.
+entra, quindi la password dev'essere lunga e solo vostra. Dal pannello Supabase
+conviene inoltre spegnere l'autoregistrazione (nessuno deve potersi iscrivere a
+uno strumento di gestione) e accendere il blocco delle password gia' finite in
+fughe di dati: sono due interruttori, non richiedono codice.
 
 ## Se qualcosa non va
 
