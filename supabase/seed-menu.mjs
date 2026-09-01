@@ -106,9 +106,13 @@ async function main() {
       const id = await api('/rest/v1/rpc/upsert_menu_product', {
         token, body: { payload: payload(product, tipo, posizione, esistenti) }
       });
-      await api('/rest/v1/rpc/set_product_photo', {
-        token, body: { p_product_id: id, p_image_url: foto(product.photo) }
-      });
+      // La foto si mette solo se e' indicata: il menu vero resta senza foto
+      // finte finche' non arrivano quelle vere dei piatti.
+      if (product.photo) {
+        await api('/rest/v1/rpc/set_product_photo', {
+          token, body: { p_product_id: id, p_image_url: foto(product.photo) }
+        });
+      }
       console.log(`${product.name} → ${id}`);
       posizione += 10;
     }

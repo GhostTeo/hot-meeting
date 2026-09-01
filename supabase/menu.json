@@ -3,335 +3,646 @@
     {
       "name": "Marinara",
       "price": "6.50",
-      "ingredients": "Pomodoro, aglio, origano, olio evo",
-      "description": "La piu semplice e la piu difficile: senza mozzarella, solo pomodoro e origano.",
-      "descriptionEn": "The simplest and the hardest: no mozzarella, just tomato and oregano.",
+      "ingredients": "Pomodoro, origano, aglio, basilico",
       "allergens": [
         "glutine"
       ],
-      "photo": "1571997478779-2adcbbe9ab2f",
       "additions": [
         {
-          "name": "Fiordilatte",
-          "price": "1.5"
+          "name": "Prosciutto crudo",
+          "price": "5"
         },
         {
-          "name": "Funghi",
-          "price": "1.5"
-        },
-        {
-          "name": "Olive",
-          "price": "1"
+          "name": "Mozzarella di bufala",
+          "price": "5"
         }
       ]
     },
     {
       "name": "Margherita",
-      "price": "8.00",
-      "ingredients": "Pomodoro, fiordilatte, basilico",
-      "description": "Quella di sempre, con basilico fresco messo in uscita dal forno.",
-      "descriptionEn": "The classic, with fresh basil added as it leaves the oven.",
+      "price": "7.00",
+      "ingredients": "Pomodoro, mozzarella, basilico",
       "allergens": [
         "glutine",
         "latte"
       ],
-      "photo": "1574071318508-1cdbab80d002",
       "additions": [
         {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
           "name": "Mozzarella di bufala",
-          "price": "2"
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Siciliana",
+      "price": "7.00",
+      "ingredients": "Pomodoro, capperi, acciughe, olive, origano",
+      "allergens": [
+        "glutine",
+        "pesce"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
         },
         {
-          "name": "Prosciutto cotto",
-          "price": "2"
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Prosciutto",
+      "price": "8.00",
+      "ingredients": "Pomodoro, mozzarella, prosciutto cotto",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
         },
         {
-          "name": "Funghi",
-          "price": "1.5"
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Funghi",
+      "price": "8.00",
+      "ingredients": "Pomodoro, mozzarella, funghi",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
         },
         {
-          "name": "Olive",
-          "price": "1"
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Napoletana",
+      "price": "8.00",
+      "ingredients": "Pomodoro, mozzarella, origano, acciughe",
+      "allergens": [
+        "glutine",
+        "pesce",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Calzone",
+      "price": "8.00",
+      "ingredients": "Pomodoro, mozzarella, prosciutto cotto",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Rucola",
+      "price": "8.00",
+      "ingredients": "Pomodoro, mozzarella, rucola",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Romana",
+      "price": "8.00",
+      "ingredients": "Pomodoro, mozzarella, ricotta, origano",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Tirolese",
+      "price": "9.00",
+      "ingredients": "Mozzarella, scamorza, speck",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Diavola",
+      "price": "9.00",
+      "ingredients": "Pomodoro, mozzarella, salame piccante",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Ai Formaggi",
+      "price": "9.00",
+      "ingredients": "Mozzarella, scamorza, gorgonzola, grana",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Calzone con Ricotta",
+      "price": "9.00",
+      "ingredients": "Pomodoro, mozzarella, prosciutto cotto, ricotta",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Bismark",
+      "price": "9.00",
+      "ingredients": "Pomodoro, mozzarella, prosciutto cotto, uovo",
+      "allergens": [
+        "glutine",
+        "latte",
+        "uova"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Regina",
+      "price": "9.00",
+      "ingredients": "Pomodoro, mozzarella, prosciutto cotto, funghi",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Capricciosa",
+      "price": "9.00",
+      "ingredients": "Pomodoro, mozzarella, carciofi, funghi, origano, olive",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "4 Stagioni",
+      "price": "9.00",
+      "ingredients": "Pomodoro, mozzarella, prosciutto cotto, funghi, carciofi",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Bernini",
+      "price": "9.00",
+      "ingredients": "Pomodoro, mozzarella, wurstel, funghi",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Del Pizzaiolo",
+      "price": "9.00",
+      "ingredients": "Pomodoro, mozzarella, spinaci, ricotta",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Tonno e Cipolla",
+      "price": "10.00",
+      "ingredients": "Pomodoro, mozzarella, tonno, cipolla",
+      "allergens": [
+        "glutine",
+        "pesce",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Ortolana",
+      "price": "10.00",
+      "ingredients": "Pomodoro, mozzarella, verdure di stagione",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Crescenza e Zucchine",
+      "price": "10.00",
+      "ingredients": "Crescenza, zucchine filangè",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Bernese",
+      "price": "10.00",
+      "ingredients": "Mozzarella, prosciutto cotto, scamorza, salsa bernese",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Chip Chop",
+      "price": "12.00",
+      "ingredients": "Pomodoro, mozzarella, wurstel, patatine",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Crudo",
+      "price": "11.00",
+      "ingredients": "Pomodoro, mozzarella, prosciutto crudo",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
         }
       ]
     },
     {
       "name": "Bufala",
       "price": "11.00",
-      "ingredients": "Pomodoro, mozzarella di bufala, basilico",
-      "description": "Bufala campana aggiunta a crudo, cosi resta morbida.",
-      "descriptionEn": "Campania buffalo mozzarella added raw, so it stays soft.",
+      "ingredients": "Pomodoro, mozzarella di bufala",
       "allergens": [
         "glutine",
         "latte"
       ],
-      "photo": "1571066811602-716837d681de",
       "additions": [
         {
           "name": "Prosciutto crudo",
-          "price": "2.5"
+          "price": "5"
         },
         {
-          "name": "Rucola",
-          "price": "1"
+          "name": "Mozzarella di bufala",
+          "price": "5"
         }
       ]
     },
     {
-      "name": "Diavola",
-      "price": "10.00",
-      "ingredients": "Pomodoro, fiordilatte, salame piccante",
-      "description": "Salame piccante di Calabria, per chi vuole sentire il fuoco.",
-      "descriptionEn": "Spicy Calabrian salami, for those who want to feel the heat.",
-      "allergens": [
-        "glutine",
-        "latte"
-      ],
-      "photo": "1534308983496-4fabb1a015ee",
-      "additions": [
-        {
-          "name": "Nduja",
-          "price": "2.5"
-        },
-        {
-          "name": "Cipolla",
-          "price": "1"
-        },
-        {
-          "name": "Olive",
-          "price": "1"
-        }
-      ]
-    },
-    {
-      "name": "Capricciosa",
-      "price": "12.00",
-      "ingredients": "Pomodoro, fiordilatte, prosciutto cotto, funghi, carciofi, olive",
-      "description": "Tutto quello che ci sta, messo bene.",
-      "descriptionEn": "Everything that fits, arranged properly.",
-      "allergens": [
-        "glutine",
-        "latte"
-      ],
-      "photo": "1604382354936-07c5d9983bd3",
-      "additions": [
-        {
-          "name": "Uovo",
-          "price": "1.5"
-        }
-      ]
-    },
-    {
-      "name": "Quattro Formaggi",
-      "price": "12.00",
-      "ingredients": "Fiordilatte, gorgonzola, taleggio, parmigiano",
-      "description": "Quattro formaggi veri, niente crema pronta.",
-      "descriptionEn": "Four real cheeses, no ready-made sauce.",
-      "allergens": [
-        "glutine",
-        "latte"
-      ],
-      "photo": "1593504049359-74330189a345",
-      "additions": [
-        {
-          "name": "Noci",
-          "price": "1.5"
-        },
-        {
-          "name": "Pere",
-          "price": "1.5"
-        }
-      ]
-    },
-    {
-      "name": "Napoli",
-      "price": "10.50",
-      "ingredients": "Pomodoro, fiordilatte, acciughe, capperi, origano",
-      "description": "Acciughe del Cantabrico e capperi di Pantelleria.",
-      "descriptionEn": "Cantabrian anchovies and capers from Pantelleria.",
-      "allergens": [
-        "glutine",
-        "latte",
-        "pesce"
-      ],
-      "photo": "1594007654729-407eedc4be65",
-      "additions": [
-        {
-          "name": "Olive taggiasche",
-          "price": "1.5"
-        }
-      ]
-    },
-    {
-      "name": "Ortolana",
+      "name": "Focaccia Mediterranea",
       "price": "11.00",
-      "ingredients": "Pomodoro, fiordilatte, melanzane, zucchine, peperoni",
-      "description": "Verdure grigliate al momento, mai sott olio.",
-      "descriptionEn": "Vegetables grilled to order, never from a jar.",
+      "ingredients": "Mozzarella di bufala, rucola, pomodori pachino",
       "allergens": [
         "glutine",
         "latte"
       ],
-      "photo": "1565299624946-b28f40a0ae38",
       "additions": [
         {
-          "name": "Fiori di zucca",
-          "price": "2"
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
         }
       ]
     },
     {
-      "name": "Boscaiola",
-      "price": "12.50",
-      "ingredients": "Fiordilatte, salsiccia, funghi porcini",
-      "description": "Bianca, con salsiccia sbriciolata a mano e porcini.",
-      "descriptionEn": "White base, with hand-crumbled sausage and porcini mushrooms.",
+      "name": "Porcini",
+      "price": "12.00",
+      "ingredients": "Pomodoro, mozzarella, funghi porcini",
       "allergens": [
         "glutine",
         "latte"
       ],
-      "photo": "1613564834361-9436948817d1",
       "additions": [
         {
-          "name": "Provola affumicata",
-          "price": "2"
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
         }
       ]
     },
     {
-      "name": "Crudo e Burrata",
+      "name": "10 e Lode",
+      "price": "12.00",
+      "ingredients": "Pomodoro, mozzarella di bufala, basilico, pomodori pachino",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Porcini Nduja",
+      "price": "13.00",
+      "ingredients": "Pomodoro, mozzarella, funghi porcini, nduja",
+      "allergens": [
+        "glutine",
+        "latte"
+      ],
+      "additions": [
+        {
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
+        {
+          "name": "Mozzarella di bufala",
+          "price": "5"
+        }
+      ]
+    },
+    {
+      "name": "Crudaiola",
       "price": "14.00",
-      "ingredients": "Pomodorini, burrata, prosciutto crudo, rucola",
-      "description": "Fuori dal forno si aggiunge tutto a crudo: burrata, crudo e rucola.",
-      "descriptionEn": "Everything goes on raw once it leaves the oven: burrata, parma ham and rocket.",
+      "ingredients": "Pomodoro, mozzarella, prosciutto crudo, rucola, grana",
       "allergens": [
         "glutine",
         "latte"
       ],
-      "photo": "1593560708920-61dd98c46a4e",
       "additions": [
         {
-          "name": "Pistacchi",
-          "price": "2"
-        }
-      ]
-    },
-    {
-      "name": "Tonno e Cipolla",
-      "price": "11.50",
-      "ingredients": "Pomodoro, fiordilatte, tonno, cipolla di Tropea",
-      "description": "Cipolla rossa dolce, tonno a pezzi interi.",
-      "descriptionEn": "Sweet red onion and tuna in whole chunks.",
-      "allergens": [
-        "glutine",
-        "latte",
-        "pesce"
-      ],
-      "photo": "1513104890138-7c749659a591",
-      "additions": [
+          "name": "Prosciutto crudo",
+          "price": "5"
+        },
         {
-          "name": "Olive nere",
-          "price": "1"
-        }
-      ]
-    },
-    {
-      "name": "Vegetariana",
-      "price": "11.00",
-      "ingredients": "Pomodorini, spinaci, ricotta, olio evo",
-      "description": "Senza carne e senza pesce, con ricotta fresca.",
-      "descriptionEn": "No meat and no fish, with fresh ricotta.",
-      "allergens": [
-        "glutine",
-        "latte"
-      ],
-      "photo": "1555072956-7758afb20e8f",
-      "additions": [
-        {
-          "name": "Pomodorini gialli",
-          "price": "1.5"
+          "name": "Mozzarella di bufala",
+          "price": "5"
         }
       ]
     }
   ],
   "bibite": [
     {
-      "name": "Acqua naturale",
+      "name": "Acqua naturale 0,5L",
       "price": "2.00",
-      "description": "Bottiglia da mezzo litro.",
-      "descriptionEn": "Half-litre bottle.",
       "ingredients": "",
-      "allergens": [],
-      "photo": "1638688569176-5b6db19f9d2a"
+      "allergens": []
     },
     {
-      "name": "Acqua frizzante",
+      "name": "Acqua gasata 0,5L",
       "price": "2.00",
-      "description": "Bottiglia da mezzo litro.",
-      "descriptionEn": "Half-litre bottle.",
       "ingredients": "",
-      "allergens": [],
-      "photo": "1638688569176-5b6db19f9d2a"
+      "allergens": []
     },
     {
-      "name": "Coca-Cola",
-      "price": "3.00",
-      "description": "Bottiglia di vetro da 33 cl.",
-      "descriptionEn": "330 ml glass bottle.",
+      "name": "Acqua naturale 1L",
+      "price": "4.00",
       "ingredients": "",
-      "allergens": [],
-      "photo": "1667450673236-62126ce038a8"
+      "allergens": []
     },
     {
-      "name": "Coca-Cola Zero",
-      "price": "3.00",
-      "description": "Bottiglia di vetro da 33 cl.",
-      "descriptionEn": "330 ml glass bottle.",
+      "name": "Acqua gasata 1L",
+      "price": "4.00",
       "ingredients": "",
-      "allergens": [],
-      "photo": "1534260164206-2a3a4a72891d"
+      "allergens": []
     },
     {
-      "name": "Fanta",
-      "price": "3.00",
-      "description": "Bottiglia di vetro da 33 cl.",
-      "descriptionEn": "330 ml glass bottle.",
+      "name": "Birra alla spina piccola",
+      "price": "3.50",
       "ingredients": "",
-      "allergens": [],
-      "photo": "1606411324897-1cfa6b9336e7"
+      "allergens": [
+        "glutine",
+        "solfiti"
+      ]
     },
     {
-      "name": "Sprite",
-      "price": "3.00",
-      "description": "Bottiglia di vetro da 33 cl.",
-      "descriptionEn": "330 ml glass bottle.",
+      "name": "Birra alla spina media",
+      "price": "7.00",
       "ingredients": "",
-      "allergens": [],
-      "photo": "1597906336500-757b42d34427"
+      "allergens": [
+        "glutine",
+        "solfiti"
+      ]
     },
     {
-      "name": "Birra chiara",
+      "name": "Birra rossa in bottiglia",
       "price": "5.00",
-      "description": "Spina da 0,4 litri.",
-      "descriptionEn": "0.4 litre draught.",
       "ingredients": "",
       "allergens": [
         "glutine",
         "solfiti"
-      ],
-      "photo": "1601912414323-0debc2271e40"
-    },
-    {
-      "name": "Birra artigianale IPA",
-      "price": "6.00",
-      "description": "Bottiglia da 33 cl, birrificio di Milano.",
-      "descriptionEn": "330 ml bottle from a Milan brewery.",
-      "ingredients": "",
-      "allergens": [
-        "glutine",
-        "solfiti"
-      ],
-      "photo": "1558642891-54be180ea339"
+      ]
     }
   ]
 }
