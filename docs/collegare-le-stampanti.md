@@ -3,6 +3,28 @@
 Questa e' la lista per la giornata in pizzeria. Le prime due parti servono a te,
 la terza dice cosa succede una volta li'.
 
+## Come vanno i cavi
+
+Ogni apparecchio va collegato **al router**, non uno all'altro:
+
+```
+              [ROUTER]
+             /    |    \
+            /     |     \
+      portatile  stampante  iPad
+                  cucina   (wifi)
+```
+
+Il cavo dal portatile **non** va nella stampante. Il router e' il punto in cui
+tutti si incontrano: e' quello che permette al telefono in sala, all'iPad in
+cucina e alla stampante di vedersi fra loro. Se colleghi il portatile
+direttamente alla stampante, quei due si parlano ma il portatile perde internet e
+nessun altro apparecchio vede la stampante.
+
+Il wifi va bene quanto il cavo, purche' sia **lo stesso router**. In pratica: la
+stampante conviene col cavo (non perde il segnale dietro il forno), il portatile
+e i telefoni possono stare sul wifi.
+
 ## 1. Cosa portare
 
 **Sempre, qualunque sia il modello:**
@@ -62,8 +84,18 @@ comande o registratori fiscali. Non installa e non tocca niente: bussa e basta.
 solo, un giorno la comanda smette di uscire senza motivo apparente. Si fissa dal
 router (riservazione) o dalla stampante stessa.
 
-**Terzo: la prova di stampa.** Si manda un testo alla stampante della cucina e
-si guarda se esce. Da li' si capisce cosa regge e cosa no.
+**Terzo: la prova di stampa.**
+
+```bash
+node scripts/prova-stampa.mjs 192.168.1.50        # carta da 80 mm
+node scripts/prova-stampa.mjs 192.168.1.50 58     # carta da 58 mm
+```
+
+Manda una comanda finta con dentro tutto quello che serve controllare: il numero
+grande, un ingrediente da togliere in negativo, un'aggiunta, una nota di
+allergia, gli allergeni e due bibite sotto «AL BANCO». Se esce questa, esce
+tutto. Se non esce, il problema e' nella rete o nell'indirizzo, non nel
+programma.
 
 **Quarto: scegliere come far uscire la comanda da sola.** Le strade sono tre e
 si decide sul posto, in base a cosa abbiamo trovato:
