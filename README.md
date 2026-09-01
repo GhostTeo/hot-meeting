@@ -131,6 +131,11 @@ viene letto da `app_metadata.role`, che deve valere `creator`.
 apertura e chiusura dei turni, calendario e ferie, cucina, storico, modifica di
 un ordine, report e limiti dimostrativi.
 
+`docs/collegare-le-stampanti.md` e' la lista per la giornata di collegamento:
+cosa portare, cosa serve sapere, cosa si fa e cosa non si puo' fare senza il
+tecnico di cassa. Lo strumento `scripts/trova-stampanti.mjs` cerca le stampanti
+sulla rete del locale e dice cosa ha trovato.
+
 `docs/stampanti.md` riguarda le stampanti: comanda in cucina, scontrino fiscale,
 cosa serve sapere dei due apparecchi in pizzeria e perche' una pagina `https` non
 puo' parlare da sola con una stampante sulla rete locale.
