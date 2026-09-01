@@ -699,6 +699,10 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .ordercard .actions .btn { flex: 1 1 auto; min-width: 96px }
 .ordercard .actions .btn.primary { flex: 2 1 140px }
 .ordercard.is-ready { border-left-color: var(--gold) }
+/* In attesa di pagamento online: c'e', ma non e' in cucina e non si consegna
+   finche' non arriva il pagamento. */
+.ordercard.is-awaiting { border-left-color: var(--ink-soft); opacity: .72 }
+.ordercard-flag.pay { color: var(--ink-soft) }
 
 /* Un ordine non ancora aperto dal cameriere si vede da lontano: se ne arrivano
    tre insieme, nessuno deve restare indietro. */

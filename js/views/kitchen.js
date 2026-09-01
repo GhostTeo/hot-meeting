@@ -24,7 +24,11 @@ function decorate(order, now) {
 
 export function kitchenBoard(orders = [], now = Date.now()) {
   const byDeadline = (left, right) => Number(left.readyAt ?? 0) - Number(right.readyAt ?? 0);
-  const decorated = orders.map(order => decorate(order, now));
+  // Un ordine che il cliente sta ancora pagando online non si fa: se abbandona
+  // il pagamento, sarebbe una pizza regalata. Riappare appena Stripe conferma.
+  const decorated = orders
+    .filter(order => order.paymentStatus !== 'awaiting')
+    .map(order => decorate(order, now));
   return {
     preparing: decorated.filter(order => ['received', 'preparing'].includes(order.status)).sort(byDeadline),
     ready: decorated.filter(order => order.status === 'ready').sort(byDeadline)

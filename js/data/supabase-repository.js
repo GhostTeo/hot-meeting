@@ -166,6 +166,7 @@ function composeOrders(rows, itemRows, changeRows, totalRows, serviceById) {
       businessDayId: row.business_day_id,
       serviceId: row.service_id,
       source: row.source.toUpperCase(),
+      paymentStatus: row.payment_status ?? 'unpaid',
       customer: row.customer_name,
       phone: row.customer_phone,
       paymentMethod: row.payment_method,

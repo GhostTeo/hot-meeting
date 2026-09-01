@@ -69,3 +69,26 @@ $$;
 -- Edge Function). Dal browser, con la chiave pubblica, restano irraggiungibili.
 revoke all on function public.attach_checkout_session(uuid, text) from public, anon, authenticated;
 revoke all on function public.mark_order_paid(text) from public, anon, authenticated;
+
+-- La coda pubblica non conta gli ordini ancora in attesa di pagamento online:
+-- non sono nel forno e forse non ci entreranno. Ricreata qui perche' dipende
+-- dalla colonna payment_status appena aggiunta.
+drop view if exists public.public_queue_status;
+create view public.public_queue_status with (security_barrier = true) as
+select
+  service.id as service_id,
+  coalesce(sum(item.quantity) filter (where product.product_type = 'pizza'), 0)::integer as pizzas_queued
+from public.services service
+join public.business_days day on day.id = service.business_day_id
+left join public.orders ordine
+  on ordine.service_id = service.id
+ and ordine.status = 'preparing'
+ and ordine.payment_status <> 'awaiting'
+left join public.order_items item
+  on item.order_id = ordine.id
+ and item.revision = (select max(revision) from public.order_items where order_id = ordine.id)
+left join public.products product on product.id = item.product_id
+where service.status = 'open' and day.status = 'open'
+group by service.id;
+revoke all on table public.public_queue_status from public, anon, authenticated;
+grant select on table public.public_queue_status to anon, authenticated;

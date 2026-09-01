@@ -73,7 +73,7 @@ function toast(text){const el=document.querySelector('#toast');el.textContent=te
 function isPizza(item){const product=state.menu.find(p=>String(p.databaseId??p.id)===String(item.productId??item.id));return product?product.type==='pizza':true}
 function countPizzas(items=[]){return items.filter(isPizza).reduce((n,i)=>n+Number(i.quantity??1),0)}
 // Chi guarda il menu non vede gli ordini altrui: la coda gliela dice il server.
-function pizzasAhead(){return state.pizzasQueued??state.orders.filter(o=>o.status==='preparing').reduce((n,o)=>n+countPizzas(o.items),0)}
+function pizzasAhead(){return state.pizzasQueued??state.orders.filter(o=>o.status==='preparing'&&o.paymentStatus!=='awaiting').reduce((n,o)=>n+countPizzas(o.items),0)}
 function ovenSettings(){return state.services[state.shift]?.oven??DEFAULT_OVEN}
 function waitMinutes(pizzas){return readyInMinutes({ahead:pizzasAhead(),pizzas,...ovenSettings()})}
 function currentClosure(date=resolveBusinessDate(Date.now(),state.activeDay)){const closure=resolveClosure(date,state.calendar.closedWeekdays,state.calendar.exceptions);return {...closure,date,message:closure.message||(closure.closed?'Chiuso per riposo settimanale':'')}}
@@ -264,24 +264,25 @@ function orderNumber(order){return order.sequence?`#${String(order.sequence).pad
 function orderCard(o){
   const promessi=promisedMinutes(o);
   const pronto=o.status==='ready';
-  const nuovo=nuovoOrdine(o);
+  const attesaPago=o.paymentStatus==='awaiting';
+  const nuovo=nuovoOrdine(o)&&!attesaPago;
   const righe=groupOrderItems(o.items||[]);
   const pizze=righe.filter(isPizza);
   const bibite=righe.filter(i=>!isPizza(i));
   const riga=i=>`${Number(i.quantity??1)}\u00d7 ${i.name}`;
-  return `<article class="card order ordercard${pronto?' is-ready':''}${nuovo?' is-new':''}" data-order="${esc(o.id)}">
+  return `<article class="card order ordercard${pronto?' is-ready':''}${nuovo?' is-new':''}${attesaPago?' is-awaiting':''}" data-order="${esc(o.id)}">
     <div class="ordercard-head">
       <span class="ordercard-n">${nuovo?'<i class="dot" aria-label="nuovo"></i>':''}#${String(o.sequence??0).padStart(2,'0')}</span>
-      <div><b>${esc(o.customer||'Cliente')}</b><p>${pronto?'<b class="ordercard-flag">Pronto, da consegnare</b> \u00b7 ':''}${esc(String(o.source||'').toLowerCase()==='web'?'dal sito':'in pizzeria')} \u00b7 ordinato ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}${promessi==null?'':` \u00b7 promessi ${promessi} min`}</p></div>
+      <div><b>${esc(o.customer||'Cliente')}</b><p>${attesaPago?'<b class="ordercard-flag pay">In attesa di pagamento</b> \u00b7 ':pronto?'<b class="ordercard-flag">Pronto, da consegnare</b> \u00b7 ':''}${esc(String(o.source||'').toLowerCase()==='web'?'dal sito':'in pizzeria')} \u00b7 ordinato ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}${promessi==null?'':` \u00b7 promessi ${promessi} min`}</p></div>
       <span class="ordercard-tot">${money(Number(o.total??0))}</span>
     </div>
     ${pizze.length?`<p class="ordercard-items">${esc(pizze.map(riga).join(' \u00b7 '))}</p>`:''}
     ${bibite.length?`<div class="ordercard-bar"><span>Da dare al banco</span><b>${esc(bibite.map(riga).join(' \u00b7 '))}</b></div>`:''}
     <div class="actions">
-      <button class="btn primary order-close" data-id="${esc(o.id)}">Consegnato</button>
-      ${pronto?'':`<button class="btn secondary ready" data-id="${esc(o.id)}">Pronto</button>`}
+      ${attesaPago?'':`<button class="btn primary order-close" data-id="${esc(o.id)}">Consegnato</button>`}
+      ${attesaPago||pronto?'':`<button class="btn secondary ready" data-id="${esc(o.id)}">Pronto</button>`}
       <button class="btn secondary order-open" data-order="${esc(o.id)}">Dettagli</button>
-      <button class="btn secondary ticket" data-id="${esc(o.id)}">Stampa</button>
+      ${attesaPago?'':`<button class="btn secondary ticket" data-id="${esc(o.id)}">Stampa</button>`}
     </div>
   </article>`;
 }

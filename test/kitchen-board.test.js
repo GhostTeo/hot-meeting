@@ -38,3 +38,19 @@ test('i minuti promessi restano quelli dati al cliente', () => {
 
   assert.equal(board.preparing[1].promised, 17);
 });
+
+test('un ordine da pagare online non entra in cucina finche non e pagato', () => {
+  const ora = Date.parse('2026-09-01T20:00:00');
+  const ordini = [
+    { id: 'p', sequence: 1, status: 'preparing', paymentStatus: 'paid', readyAt: ora + 60000 },
+    { id: 'a', sequence: 2, status: 'preparing', paymentStatus: 'awaiting', readyAt: ora + 60000 },
+    { id: 'c', sequence: 3, status: 'preparing', paymentStatus: 'unpaid', readyAt: ora + 60000 }
+  ];
+
+  const board = kitchenBoard(ordini, ora);
+  const numeri = board.preparing.map(o => o.sequence);
+
+  // 'paid' (pagato online) e 'unpaid' (paga in cassa) si fanno; 'awaiting' no.
+  assert.deepEqual(numeri, [1, 3]);
+  assert.equal(numeri.includes(2), false);
+});
