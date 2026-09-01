@@ -1086,3 +1086,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 /* Ricerca nel menu (lato gestione) + orario dei servizi. */
 .menu-search-field input { width: 100%; }
 .service-hours { margin: 2px 0 8px; font-size: .9rem; color: var(--ink-soft); }
+
+/* Ricerca fra le aggiunte nel personalizzatore. */
+.add-search-field { margin: 4px 0 10px; }
+.add-search-field input { width: 100%; }

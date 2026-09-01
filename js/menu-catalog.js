@@ -22,6 +22,27 @@ export function regularPizzas(menu = []) {
 
 const TIPO_PAROLE = { pizza: ['pizza', 'pizze'], drink: ['bibita', 'bibite', 'drink', 'bevanda', 'bevande'] };
 
+// Il numero della settimana ISO: serve a far ruotare la pizza della settimana
+// una volta a settimana, sempre la stessa dentro la stessa settimana.
+function weekNumber(date) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7) + d.getUTCFullYear() * 53;
+}
+
+// Se il Creator non ha contrassegnato nessuna pizza, ne scegliamo una noi a
+// rotazione (una diversa ogni settimana), cosi' la sezione "Pizza della
+// settimana" c'e' sempre. Se invece una e' gia' contrassegnata, non serve.
+export function autoWeeklyPizza(menu = [], date = new Date()) {
+  const disponibili = availablePizzas(menu);
+  if (!disponibili.length) return null;
+  if (disponibili.some(p => p.weekly === true)) return null;
+  const ordinate = [...disponibili].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  return ordinate[weekNumber(date) % ordinate.length];
+}
+
 // Le aggiunte che ogni pizza offre sempre: la doppia mozzarella e il doppio
 // pomodoro. Il prezzo e' il valore di partenza; quando queste aggiunte vengono
 // messe nel menu vero, il prezzo scritto li' vince (vedi withDefaultAdditions).

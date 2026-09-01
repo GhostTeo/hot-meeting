@@ -78,3 +78,24 @@ test('esistono due aggiunte di default con un prezzo', () => {
   assert.equal(DEFAULT_PIZZA_ADDITIONS.length, 2);
   for (const a of DEFAULT_PIZZA_ADDITIONS) assert.ok(a.price > 0);
 });
+
+import { autoWeeklyPizza } from '../js/menu-catalog.js';
+
+test('se nessuna pizza e contrassegnata, ne sceglie una a rotazione per settimana', () => {
+  const pizze = [
+    { id: 'a', type: 'pizza', available: true },
+    { id: 'b', type: 'pizza', available: true },
+    { id: 'c', type: 'pizza', available: true }
+  ];
+  const s1 = autoWeeklyPizza(pizze, new Date('2026-09-01T12:00:00Z'));
+  const s2 = autoWeeklyPizza(pizze, new Date('2026-09-08T12:00:00Z'));
+  assert.ok(s1 && pizze.some(p => p.id === s1.id));
+  assert.ok(s2 && pizze.some(p => p.id === s2.id));
+  // deterministica: stessa settimana, stessa scelta
+  assert.equal(autoWeeklyPizza(pizze, new Date('2026-09-02T20:00:00Z')).id, s1.id);
+});
+
+test('se una pizza e gia contrassegnata, l auto-scelta non serve (resta null)', () => {
+  const pizze = [{ id: 'a', type: 'pizza', available: true, weekly: true }, { id: 'b', type: 'pizza', available: true }];
+  assert.equal(autoWeeklyPizza(pizze, new Date('2026-09-01T12:00:00Z')), null);
+});

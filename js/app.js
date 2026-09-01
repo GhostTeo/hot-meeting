@@ -24,7 +24,7 @@ import { orderSuggestions } from './suggestions.js';
 import { countdownText, waitingProgress, shouldForgetReceipt } from './views/waiting-room.js';
 import { groupCartLines, groupOrderItems, isPlain, plainCartCount } from './cart-lines.js';
 import { openingStatus } from './opening-hours.js';
-import { weeklyPizzas, regularPizzas, withDefaultAdditions } from './menu-catalog.js';
+import { weeklyPizzas, regularPizzas, withDefaultAdditions, autoWeeklyPizza } from './menu-catalog.js';
 import { loginProblem } from './login-errors.js';
 import { statoConnessione } from './connessione.js';
 import { pagaOnline, urlCheckout } from './pagamento-online.js';
@@ -208,10 +208,13 @@ function dishCard(p,closed,weekly=false){
 function products(type){
   const closed=currentClosure().closed||!hoursStatus().open;
   if(type==='pizza'){
-    const settimana=weeklyPizzas(state.menu),normali=regularPizzas(state.menu);
+    let settimana=weeklyPizzas(state.menu);
+    // Se il locale non ne ha scelta una, ne mettiamo noi una a rotazione
+    // settimanale, cosi' la sezione c'e' sempre.
+    if(!settimana.length){const auto=autoWeeklyPizza(state.menu,new Date());if(auto)settimana=[auto]}
+    const idSettimana=new Set(settimana.map(p=>p.id));
+    const normali=regularPizzas(state.menu).filter(p=>!idSettimana.has(p.id));
     if(!settimana.length&&!normali.length)return `<p>${t('product.drink')}</p>`;
-    // Le pizze della settimana in cima, in una fascia a parte; sotto tutte le
-    // altre. Se non ce ne sono di speciali, resta il menu normale e basta.
     const inEvidenza=settimana.length?`<div class="dish-weekly-band"><h2 class="dish-weekly-title">Pizza della settimana</h2><div class="grid dish-grid">${settimana.map(p=>dishCard(p,closed,true)).join('')}</div></div>`:'';
     return inEvidenza+normali.map(p=>dishCard(p,closed)).join('');
   }
@@ -270,7 +273,7 @@ function confirmBody(){
 function cart(){const total=state.cart.reduce((n,i)=>n+i.price,0),closed=currentClosure().closed||!hoursStatus().open;return `<div class="cart-head"><h2>${t('cart.title')}</h2><button class="btn secondary" id="cart-close">${t('cart.close')}</button></div>${state.cart.map((i,x)=>{const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',i.note||''].filter(Boolean);return `<div class="cart-line"><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}<p class="cart-allergens">${esc(pallergenLine(i))}</p></div><div class="cart-line-side"><span>${money(i.price)}</span><button class="btn secondary" data-remove="${x}">${t('cart.remove')}</button></div></div>`}).join('')||`<p>${t('cart.empty')}</p>`}<h3 class="cart-total">${t('cart.total')} ${money(total)}</h3>${state.cart.length?`<div class="field"><label>${t('cart.name')}<input id="name" value="${esc(state.contact?.name||'')}"></label></div><div class="field"><label>${t('cart.phone')}<input id="phone" inputmode="tel" value="${esc(state.contact?.phone||'')}"></label></div><div class="field"><label>${t('cart.email')}<input id="email" type="email" inputmode="email" value="${esc(state.contact?.email||'')}"></label></div><div class="field"><span>${t('cart.payment')}</span><div class="payment-grid">${DEMO_PAYMENT_METHODS.map((method,index)=>`<label class="payment-option"><input type="radio" name="payment" value="${method.id}" ${(state.contact?.payment??DEMO_PAYMENT_METHODS[0].id)===method.id?'checked':''}> <b>${translatePaymentMethod(method.id,state.locale)}</b></label>`).join('')}</div></div><button class="btn primary" id="checkout" ${closed?'disabled':''}>${closed?t('product.closed'):t('cart.confirm')}</button>`:''}`}
 
 
-function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}" data-row="ing-${index}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.map((addition,index)=>`<div class="option-row${addition.quantity?' picked':''}" data-row="add-${index}"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}" ${addition.quantity?'':'disabled'}>\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}<div class="allergens"><b>${esc(pallergenLine(p))}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
+function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}" data-row="ing-${index}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.length>4?`<div class="field add-search-field"><input id="addition-search" type="search" placeholder="Cerca un'aggiunta\u2026" autocomplete="off"></div>`:''}<div id="addition-list">${customizing.additions.map((addition,index)=>`<div class="option-row${addition.quantity?' picked':''}" data-row="add-${index}" data-name="${esc(String(translateProduct(addition.names??{it:addition.name},state.locale)).toLowerCase())}"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}" ${addition.quantity?'':'disabled'}>\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}</div><div class="allergens"><b>${esc(pallergenLine(p))}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
 
 // Cucina e Creator sono la stessa area riservata: le comande contengono nome e
 // telefono di chi ordina, non stanno dietro un semplice cambio di scheda.
@@ -394,6 +397,14 @@ function bind(){
   }
   document.querySelectorAll('.addition-minus').forEach(b=>b.onclick=()=>stepCustomAddition(Number(b.dataset.index),-1));
   document.querySelectorAll('.addition-plus').forEach(b=>b.onclick=()=>stepCustomAddition(Number(b.dataset.index),1));
+  // Ricerca fra le aggiunte: nasconde le righe che non combaciano, senza
+  // ridisegnare (cosi' i +/- restano dove sono).
+  document.querySelector('#addition-search')?.addEventListener('input',event=>{
+    const q=event.target.value.trim().toLowerCase();
+    document.querySelectorAll('#addition-list .option-row').forEach(row=>{
+      row.style.display=(!q||(row.dataset.name||'').includes(q))?'':'none';
+    });
+  });
   document.querySelector('#custom-add')?.addEventListener('click',()=>{
     const note=document.querySelector('#custom-note').value.trim();
     const price=calculateCustomizedPrice(customizing.product.price,customizing.additions);
@@ -482,8 +493,16 @@ function bind(){
     if(!dati)return;
     const payment=DEMO_PAYMENT_METHODS.find(method=>method.id===dati.paymentId);
     const cartItems=state.cart.map(i=>({...i,quantity:1}));
-    const total=state.cart.reduce((n,i)=>n+i.price,0),eta=waitMinutes(countPizzas(cartItems)),businessDate=state.activeDay.date,service=state.services[state.shift],sequence=nextServiceSequence(state.orders,service,state.activeDay),fees=total*payment.feeRate;
-    const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:state.activeDay.id,serviceId:service.id,source:'WEB',customer:dati.name||'Cliente',phone:dati.phone,email:dati.email,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:state.shift,createdAt:Date.now(),readyAt:Date.now()+eta*60000,total,gross:total,fee:fees,fees,items:cartItems};
+    const service=state.shift?state.services[state.shift]:null;
+    // Se il servizio non risulta aperto sul dispositivo, rileggo dal server e,
+    // se davvero non c'e', lo dico chiaro invece di far partire un ordine cieco.
+    if(!service||service.status!=='open'||!state.activeDay){
+      await refreshRepositoryState();
+      const ora=state.shift?state.services[state.shift]:null;
+      if(!ora||ora.status!=='open'){return toast('Il servizio non risulta aperto: chiedi in pizzeria di aprirlo, poi riprova.')}
+    }
+    const total=state.cart.reduce((n,i)=>n+i.price,0),eta=waitMinutes(countPizzas(cartItems)),businessDate=state.activeDay.date,servizioAttivo=state.services[state.shift],sequence=nextServiceSequence(state.orders,servizioAttivo,state.activeDay),fees=total*payment.feeRate;
+    const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:state.activeDay.id,serviceId:servizioAttivo.id,source:'WEB',customer:dati.name||'Cliente',phone:dati.phone,email:dati.email,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:state.shift,createdAt:Date.now(),readyAt:Date.now()+eta*60000,total,gross:total,fee:fees,fees,items:cartItems};
     try{
       // Numero pubblico e totale li decide il server: l'anteprima locale
       // servirebbe solo a mostrare un numero che poi cambia.
@@ -510,7 +529,18 @@ function bind(){
       await stateRefresh.refresh();
       render();toast('Ordine inviato in cucina.');
       void aggiornaAttesa();
-    }catch{reportRepositoryError()}
+    }catch(error){
+      const msg=String(error?.message||'');
+      if(/service|business day|closed|chiuso|not open|già|gia'/i.test(msg)){
+        await refreshRepositoryState().catch(()=>{});
+        toast('Il servizio non risulta aperto sul server: fatelo aprire in pizzeria e riprova.');
+      }else if(/network|fetch|Failed to fetch|timeout|NetworkError/i.test(msg)){
+        toast('Server non raggiungibile: controlla la connessione e riprova.');
+      }else{
+        // Il motivo vero, non il generico "connessione non disponibile".
+        toast(msg?`Ordine non inviato: ${msg}`:'Ordine non inviato: riprova.');
+      }
+    }
   }
   document.querySelector('#login')?.addEventListener('click',async()=>{try{const session=await runtime.auth.signIn(document.querySelector('#user').value,document.querySelector('#pass').value);state.creator=isCreatorSession(session);await refreshRepositoryState()}catch(error){toast(loginProblem(error))}});
   document.querySelectorAll('.admin-nav').forEach(b=>b.onclick=()=>{adminSection=b.dataset.section;render()});
