@@ -1129,6 +1129,26 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .menu-photo-preview { width: 180px; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 14px; border: 1px solid var(--line) }
 .menu-photo-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin: 10px 0 }
 
+/* Il bottone che sceglie la pizza della settimana si deve vedere fra gli
+   altri, sempre grigi: e' oro anche da spenta (invita a toccarlo) e diventa
+   oro pieno quando quella pizza e' gia' in vetrina, cosi' si capisce a colpo
+   d'occhio quale sta girando in questo momento senza leggere il testo. */
+.weekly-toggle {
+  border-color: var(--gold);
+  color: #8a5a11;
+  font-weight: 700;
+}
+
+.weekly-toggle:hover { border-color: #cc9435; background: #fdf3de }
+
+.weekly-toggle.weekly-active {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #3a2708;
+}
+
+.weekly-toggle.weekly-active:hover { background: #cc9435 }
+
 /* ---------- Area di servizio ---------- */
 
 .staff {

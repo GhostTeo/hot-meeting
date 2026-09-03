@@ -7,13 +7,13 @@ export const LOCALES = ['it', 'en'];
 
 const DICTIONARY = {
   it: {
-    'app.tagline': 'Pizza calda, senza attese inutili',
+    'app.tagline': 'Croccante fuori, filante dentro',
     'app.headline': 'Il tuo incontro con la pizza.',
-    'app.subtitle': 'Ordina online e ritira a Milano, Piola.',
+    'app.subtitle': 'Sfornata ora. La ritiri calda a Milano, Piola.',
     'hero.weekly': 'Pizza della settimana',
     'hero.today': 'Oggi esce dal forno',
     'hero.cta': 'Voglio questa',
-    'hero.social': 'È la più scelta questa settimana',
+    'hero.social': 'La più gettonata della settimana',
     'status.open': 'Ordini aperti',
     'status.closed': 'Ordini al momento chiusi',
     'status.wait': 'Attesa indicativa',
@@ -86,13 +86,13 @@ const DICTIONARY = {
     'allergens.warning': 'In caso di allergie o intolleranze scrivilo nelle note e contatta il locale. Può verificarsi contaminazione crociata.'
   },
   en: {
-    'app.tagline': 'Hot pizza, no pointless waiting',
+    'app.tagline': 'Crispy outside, melty inside',
     'app.headline': 'Your meeting with pizza.',
-    'app.subtitle': 'Order online and pick up in Milan, Piola.',
+    'app.subtitle': 'Fresh out of the oven. Pick it up hot in Milan, Piola.',
     'hero.weekly': 'Pizza of the week',
     'hero.today': 'Fresh out of the oven today',
     'hero.cta': 'I want this one',
-    'hero.social': 'The most ordered pick this week',
+    'hero.social': "This week's most wanted",
     'status.open': 'Orders open',
     'status.closed': 'Orders currently closed',
     'status.wait': 'Estimated wait',

@@ -169,7 +169,7 @@ function menuCard(product, money) {
     <div class="actions">
       <button class="btn primary menu-edit" data-id="${escapeHtml(product.id)}">Modifica</button>
       <button class="btn secondary availability" data-id="${escapeHtml(product.id)}">${product.available ? 'Togli dal menu' : 'Rimetti nel menu'}</button>
-      ${product.type === 'pizza' ? `<button class="btn secondary weekly-toggle" data-id="${escapeHtml(product.id)}">${product.weekly ? 'Togli dalla settimana' : 'Pizza della settimana'}</button>` : ''}
+      ${product.type === 'pizza' ? `<button class="btn secondary weekly-toggle${product.weekly ? ' weekly-active' : ''}" data-id="${escapeHtml(product.id)}">${product.weekly ? '★ In vetrina questa settimana' : '★ Metti in vetrina questa settimana'}</button>` : ''}
       <button class="btn secondary menu-delete" data-id="${escapeHtml(product.id)}">Elimina</button>
     </div>
   </article>`;
