@@ -158,8 +158,17 @@ function customer(){
   if(state.receipt)return orderReceiptPanel(state.receipt,state.locale,money,orderProgress);
   const eta=waitMinutes(Math.max(1,countPizzas(state.cart.map(i=>({...i,quantity:1}))))),closure=currentClosure(),open=orderingOpen(),closedHours=closedHoursMessage();
   const total=state.cart.reduce((n,i)=>n+i.price,0);
+  // La foto di apertura e' quella della pizza della settimana, cosi' la
+  // vetrina mostra sempre qualcosa di vero e non un piatto a caso.
+  const settimanaHero=weeklyPizzas(state.menu);
+  const heroDish=settimanaHero[0]||autoWeeklyPizza(state.menu,new Date())||regularPizzas(state.menu)[0];
+  const heroFoto=heroImage(heroDish);
   return `<section class="menu-hero">
-      <div><span class="eyebrow">${t('app.tagline')}</span><h1>${t('app.headline')}</h1><p>${t('app.subtitle')}</p></div>
+      ${heroFoto?`<div class="menu-hero-media"><img src="${esc(heroFoto)}" alt="" loading="eager" decoding="async"></div>`:''}
+      ${heroDish?`<span class="menu-hero-tag">${settimanaHero.length?t('hero.weekly'):t('hero.today')} \u00b7 ${esc(pname(heroDish))}</span>`:''}
+      <div class="menu-hero-content">
+        <span class="eyebrow">${t('app.tagline')}</span><h1>${t('app.headline')}</h1><p>${t('app.subtitle')}</p>
+      </div>
       <div class="status ${open?'':'closed-status'}"><b>${open?t('status.open'):t('status.closed')}</b>${closure.closed?`<p class="closure-reason"><strong>${esc(closure.message)}</strong><br>${closure.date}</p>`:closedHours?`<p class="closure-reason"><strong>${esc(closedHours.tel)}</strong><br>${esc(closedHours.quando)}</p>`:`<p>${t('status.wait')}: ${eta}\u2013${eta+5} ${t('status.minutes')}</p>`}</div>
     </section>
     <nav class="menu-nav">
@@ -197,6 +206,13 @@ function dishImage(product){
   if(product.imageUrl)return product.imageUrl;
   const pool=product.type==='drink'?_BIBITA_FOTO:_PIZZA_FOTO;
   return `${pool[_hash(product.id||product.name)%pool.length]}?w=600&q=70&auto=format&fit=crop`;
+}
+// La vetrina merita una foto grande quanto basta per far venire fame a chi
+// arriva: stessa immagine della scheda, ma alla risoluzione della testata.
+function heroImage(product){
+  if(!product)return null;
+  if(product.imageUrl)return product.imageUrl;
+  return `${_PIZZA_FOTO[_hash(product.id||product.name)%_PIZZA_FOTO.length]}?w=1600&q=80&auto=format&fit=crop`;
 }
 function dishPhoto(product,variant='dish'){
   const url=dishImage(product);
