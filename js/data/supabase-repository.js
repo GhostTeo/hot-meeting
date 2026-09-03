@@ -112,6 +112,9 @@ function mapService(row) {
     shift: row.shift,
     status: row.status,
     online: row.online_orders_enabled,
+    // Le prenotazioni sono un secondo interruttore, sincronizzato allo stesso
+    // modo di "online": arriva dal server, non da uno stato solo del browser.
+    bookingsOpen: row.bookings_enabled ?? false,
     capacity: row.capacity_pizzas_hour ?? 90,
     // Il forno: quante pizze insieme, quanto dura un'infornata, quanto margine
     // si tiene oltre la cottura. Da qui esce l'attesa promessa al cliente.
@@ -134,6 +137,7 @@ function mapServiceReceipt(row) {
     shift: row.shift,
     status: row.status,
     online_orders_enabled: row.online_orders_enabled,
+    bookings_enabled: row.bookings_enabled,
     capacity_pizzas_hour: row.capacity_pizzas_hour,
     oven_slots: row.oven_slots,
     bake_minutes: row.bake_minutes,
@@ -195,6 +199,7 @@ function composeOrders(rows, itemRows, changeRows, totalRows, serviceById) {
       businessDate: serviceById.get(row.service_id)?.businessDate,
       createdAt: millis(row.created_at),
       readyAt: millis(row.eta_ready_at),
+      scheduledFor: millis(row.requested_ready_at),
       total: (total?.total_cents ?? row.total_cents) / 100,
       gross: (total?.gross_cents ?? row.gross_cents) / 100,
       fee: (total?.fee_cents ?? row.fee_cents) / 100,
@@ -215,7 +220,10 @@ function mapReceipt(result = {}) {
     status: result.status,
     gross: (result.gross_cents ?? 0) / 100,
     fees: (result.fee_cents ?? 0) / 100,
-    total: (result.total_cents ?? result.gross_cents ?? 0) / 100
+    total: (result.total_cents ?? result.gross_cents ?? 0) / 100,
+    // Se il server ha accettato una prenotazione, questo e' l'orario vero:
+    // ha gia' passato i controlli di capienza, meglio del calcolo del browser.
+    scheduledFor: millis(result.requested_ready_at)
   };
 }
 
@@ -263,6 +271,7 @@ function orderPayload(order, includeRequestToken) {
     items: order.items.map(normalizeOrderItem)
   };
   if (includeRequestToken) payload.request_token = order.requestToken;
+  if (order.scheduledFor) payload.requested_ready_at = new Date(order.scheduledFor).toISOString();
   return payload;
 }
 
@@ -325,11 +334,14 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         orderedQuery(client, 'public_closure_calendar', '*', 'closure_type'),
         orderedQuery(client, 'allergens', '*', 'eu_order'),
         client.from('public_queue_status').select('*'),
-        client.from('pizzeria_settings').select('*')
+        client.from('pizzeria_settings').select('*'),
+        // Quante pizze sono gia' prenotate in ogni quarto d'ora: senza questo
+        // il menu offrirebbe orari gia' pieni, che il server rifiuterebbe.
+        client.from('public_booking_slots').select('*')
       ]);
       const publicFailure = publicResults.find(result => result.error);
       if (publicFailure) throw publicFailure.error;
-      const [productRows, publicServices, publicClosures, allergenRows, queueRows, settingsRows] = publicResults.map(result => result.data);
+      const [productRows, publicServices, publicClosures, allergenRows, queueRows, settingsRows, bookingSlotRows] = publicResults.map(result => result.data);
       const settings = settingsRows?.[0];
 
       let dayRows = [];
@@ -404,6 +416,15 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
           : 0,
         shift: activeService?.shift ?? null,
         online: activeService?.online ?? false,
+        bookingsOpen: activeService?.bookingsOpen ?? false,
+        // Quante pizze sono gia' prenotate, quarto d'ora per quarto d'ora:
+        // nessun nome, nessun ordine, solo il numero. Il menu lo usa per
+        // nascondere da solo gli orari gia' pieni.
+        bookedSlots: (bookingSlotRows ?? []).map(row => ({
+          serviceId: row.service_id,
+          at: millis(row.requested_ready_at),
+          pizzas: Number(row.pizzas_booked || 0)
+        })),
         // Il forno e' una proprieta' fissa della pizzeria: si legge dalle
         // impostazioni, non dal servizio, cosi' c'e' sempre anche a locale chiuso.
         ovenDefaults: settings
@@ -493,6 +514,14 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
 
     async setServiceOnline(serviceId, enabled) {
       const result = await client.rpc('set_service_online', {
+        p_service_id: serviceId,
+        p_enabled: enabled
+      });
+      return mapServiceReceipt(throwIfError(result));
+    },
+
+    async setServiceBookings(serviceId, enabled) {
+      const result = await client.rpc('set_service_bookings', {
         p_service_id: serviceId,
         p_enabled: enabled
       });

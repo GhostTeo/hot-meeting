@@ -24,7 +24,7 @@ import { orderSuggestions } from './suggestions.js';
 import { countdownText, waitingProgress, shouldForgetReceipt } from './views/waiting-room.js';
 import { groupCartLines, groupOrderItems, isPlain, plainCartCount } from './cart-lines.js';
 import { openingStatus, zonedMinutes, SERVICE_HOURS } from './opening-hours.js';
-import { bookableSlots, slotTimestamp, minutesToLabel } from './booking.js';
+import { bookableSlots, slotTimestamp, slotCapacity, minutesToLabel } from './booking.js';
 import { weeklyPizzas, regularPizzas, withDefaultAdditions, autoWeeklyPizza, ingredientCatalog } from './menu-catalog.js';
 import { loginProblem } from './login-errors.js';
 import { statoConnessione } from './connessione.js';
@@ -35,7 +35,7 @@ import { appConfig } from './config.js';
 import { bootstrapDataLayer, isCreatorSession } from './bootstrap.js';
 import { applyRepositorySnapshot, createRepositoryRefreshCoordinator } from './app-state.js';
 
-const defaults={view:'customer',creator:false,locale:'it',receipt:null,contact:null,shift:null,capacity:90,online:true,bookingsOpen:false,cart:[],calendar:{closedWeekdays:[2],exceptions:[]},services:{lunch:null,dinner:null},activeDay:null,menu:[
+const defaults={view:'customer',creator:false,locale:'it',receipt:null,contact:null,shift:null,capacity:90,online:true,bookingsOpen:false,bookedSlots:[],cart:[],calendar:{closedWeekdays:[2],exceptions:[]},services:{lunch:null,dinner:null},activeDay:null,menu:[
  {id:'margherita',type:'pizza',name:'Margherita',price:8,emoji:'🍕',ingredients:['Pomodoro','Mozzarella','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Mozzarella di bufala',price:2},{name:'Prosciutto cotto',price:2},{name:'Olive',price:1}],available:true},
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
@@ -100,7 +100,22 @@ function orderingOpen(){return Boolean(hoursStatus().open&&state.shift&&state.se
 function bookingOpen(){return Boolean(hoursStatus().open&&state.shift&&state.services[state.shift]?.status==='open'&&state.bookingsOpen&&!currentClosure().closed)}
 function currentBookableSlots(now=Date.now()){
   if(!bookingOpen())return [];
-  return bookableSlots({shift:state.shift,hours:SERVICE_HOURS,nowMinutes:zonedMinutes(now)});
+  const service=state.services[state.shift];
+  const oven=ovenSettings();
+  // Quante pizze sono gia' prenotate in questo turno, quarto d'ora per
+  // quarto d'ora: uno slot senza piu' posto nel forno non compare nemmeno.
+  const booked={};
+  for(const entry of state.bookedSlots||[]){
+    if(!entry||entry.serviceId!==service?.id||!entry.at)continue;
+    const minuto=zonedMinutes(entry.at);
+    booked[minuto]=(booked[minuto]||0)+Number(entry.pizzas||0);
+  }
+  return bookableSlots({
+    shift:state.shift,hours:SERVICE_HOURS,nowMinutes:zonedMinutes(now),
+    capacity:slotCapacity({ovenSlots:oven.slots,bakeMinutes:oven.bakeMinutes}),
+    booked,
+    partySize:countPizzas(state.cart.map(i=>({...i,quantity:1})))
+  });
 }
 // Un ordine "dovuto adesso": o non e' prenotato, o l'orario prenotato e' gia
 // arrivato. Solo questi contano per la cucina e per la coda del forno; una
@@ -654,14 +669,15 @@ function bind(){
         }catch(errore){toast(errore?.message||'Pagamento non avviato.');return}
       }
       const promessi=Number(receipt?.etaMinutes??eta);
-      // Prenotata: l'orario da mostrare e' quello scelto, non la stima
-      // generica del forno (che non sa nulla della prenotazione finche' non
-      // arriva anche sul server).
+      // Prenotata: l'orario da mostrare e' quello confermato dal server se
+      // c'e' (ha gia' passato i controlli di capienza), altrimenti quello
+      // scelto dal browser, altrimenti la stima generica del forno.
+      const orarioConfermato=receipt?.scheduledFor??order.scheduledFor;
       state.receiptDone=false;
       state.receipt=buildCustomerRecap({
         ...order,...receipt,
         total:Number(receipt?.total??total),
-        readyAt:order.scheduledFor??(order.createdAt+promessi*60000),
+        readyAt:orarioConfermato??(order.createdAt+promessi*60000),
         items:cartItems
       },{locale:state.locale,pizzeriaPhone:appConfig.pizzeriaPhone??null});
       state.cart=[];confirming=null;orderProgress=null;state.contact=null;save();
@@ -670,7 +686,12 @@ function bind(){
       void aggiornaAttesa();
     }catch(error){
       const msg=String(error?.message||'');
-      if(/service|business day|closed|chiuso|not open|già|gia'/i.test(msg)){
+      if(/slot is full|requested_ready_at/i.test(msg)){
+        // Qualcun altro ha preso l'ultimo posto in quel quarto d'ora fra la
+        // scelta e l'invio: si aggiornano gli orari e si fa scegliere di nuovo.
+        await refreshRepositoryState().catch(()=>{});
+        toast('Quell orario si e riempito proprio ora: scegline un altro.');
+      }else if(/service|business day|closed|chiuso|not open|già|gia'/i.test(msg)){
         await refreshRepositoryState().catch(()=>{});
         toast('Il servizio non risulta aperto sul server: fatelo aprire in pizzeria e riprova.');
       }else if(/network|fetch|Failed to fetch|timeout|NetworkError/i.test(msg)){
@@ -757,7 +778,18 @@ function bind(){
   // Le prenotazioni restano un interruttore solo su questo dispositivo, per
   // ora: non passano dal server come "online", quindi non si sincronizzano
   // da sole fra piu' postazioni della pizzeria.
-  document.querySelectorAll('#toggle-bookings').forEach(b=>b.onclick=()=>{state.bookingsOpen=!state.bookingsOpen;save();render();toast(state.bookingsOpen?'Prenotazioni attive.':'Prenotazioni sospese.')});
+  // Sincronizzato come "Online": passa dal server, cosi' ogni postazione
+  // della pizzeria vede lo stesso interruttore, non solo questo dispositivo.
+  document.querySelectorAll('#toggle-bookings').forEach(b=>b.onclick=async()=>{
+    const service=state.services[state.shift];
+    if(!service)return toast('Apri prima un servizio.');
+    try{
+      await repository.setServiceBookings(service.id,!state.bookingsOpen);
+      if(runtime.mode==='supabase')await refreshRepositoryState();
+      else{state.bookingsOpen=!state.bookingsOpen;save();render()}
+      toast(state.bookingsOpen?'Prenotazioni attive.':'Prenotazioni sospese.');
+    }catch{reportRepositoryError()}
+  });
   function readCounterDraft(){
     if(!counterDraft)return null;
     const val=id=>document.querySelector(id)?.value??'';

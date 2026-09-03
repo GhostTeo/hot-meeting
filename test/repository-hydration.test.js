@@ -123,7 +123,7 @@ test('hydration remota compone menu, giornata, servizi e viste correnti ordini',
   assert.equal(state.orders[0].items[0].name, 'Margherita');
   assert.deepEqual(state.orders[0].items[0].additions, [{ id: '90000000-0000-4000-8000-000000000001', name: 'Olive', price: 1, quantity: 1 }]);
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
-    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'pizzeria_settings', 'business_days', 'services', 'orders',
+    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'pizzeria_settings', 'public_booking_slots', 'business_days', 'services', 'orders',
     'current_order_items', 'current_order_item_changes', 'current_order_totals', 'closures',
     'current_payment_adjustments', 'ingredients'
   ]);
@@ -237,7 +237,7 @@ test('snapshot anonimo legge solo le viste pubbliche e non maschera i loro error
 
   assert.equal(state.services.lunch.id, 'service-public');
   assert.deepEqual(client.calls.filter(call => call.type === 'select').map(call => call.table), [
-    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'pizzeria_settings'
+    'products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'pizzeria_settings', 'public_booking_slots'
   ]);
 
   const cache = createLocalRepository({ initialState: { menu: [{ id: 'last-good' }] } });
@@ -530,7 +530,7 @@ test('la creazione ordine restituisce la ricevuta con numero e giornata', async 
   });
 
   assert.deepEqual(receipt, {
-    id: 'ord-9', businessDate: '2026-08-25', sequence: 3, status: 'preparing', gross: 21, fees: 0, total: 21
+    id: 'ord-9', businessDate: '2026-08-25', sequence: 3, status: 'preparing', gross: 21, fees: 0, total: 21, scheduledFor: null
   });
 });
 
