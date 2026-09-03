@@ -23,7 +23,8 @@ import { announceOrders, arrivedOrders, unlockChime, alarmActive, stopAlarm } fr
 import { orderSuggestions } from './suggestions.js';
 import { countdownText, waitingProgress, shouldForgetReceipt } from './views/waiting-room.js';
 import { groupCartLines, groupOrderItems, isPlain, plainCartCount } from './cart-lines.js';
-import { openingStatus } from './opening-hours.js';
+import { openingStatus, zonedMinutes, SERVICE_HOURS } from './opening-hours.js';
+import { bookableSlots, slotTimestamp, minutesToLabel } from './booking.js';
 import { weeklyPizzas, regularPizzas, withDefaultAdditions, autoWeeklyPizza, ingredientCatalog } from './menu-catalog.js';
 import { loginProblem } from './login-errors.js';
 import { statoConnessione } from './connessione.js';
@@ -34,7 +35,7 @@ import { appConfig } from './config.js';
 import { bootstrapDataLayer, isCreatorSession } from './bootstrap.js';
 import { applyRepositorySnapshot, createRepositoryRefreshCoordinator } from './app-state.js';
 
-const defaults={view:'customer',creator:false,locale:'it',receipt:null,contact:null,shift:null,capacity:90,online:true,cart:[],calendar:{closedWeekdays:[2],exceptions:[]},services:{lunch:null,dinner:null},activeDay:null,menu:[
+const defaults={view:'customer',creator:false,locale:'it',receipt:null,contact:null,shift:null,capacity:90,online:true,bookingsOpen:false,cart:[],calendar:{closedWeekdays:[2],exceptions:[]},services:{lunch:null,dinner:null},activeDay:null,menu:[
  {id:'margherita',type:'pizza',name:'Margherita',price:8,emoji:'🍕',ingredients:['Pomodoro','Mozzarella','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Mozzarella di bufala',price:2},{name:'Prosciutto cotto',price:2},{name:'Olive',price:1}],available:true},
  {id:'diavola',type:'pizza',name:'Diavola',price:10,emoji:'🌶️',ingredients:['Pomodoro','Mozzarella','Salame piccante'],allergens:['Glutine','Latte'],additions:[{name:'Cipolla',price:1},{name:'Olive',price:1},{name:'Bufala',price:2}],available:true},
  {id:'bufala',type:'pizza',name:'Bufala',price:11,emoji:'🍅',ingredients:['Pomodoro','Bufala','Basilico'],allergens:['Glutine','Latte'],additions:[{name:'Prosciutto crudo',price:2.5},{name:'Acciughe',price:2}],available:true},
@@ -84,7 +85,7 @@ function toast(text){const el=document.querySelector('#toast');el.textContent=te
 function isPizza(item){const product=state.menu.find(p=>String(p.databaseId??p.id)===String(item.productId??item.id));return product?product.type==='pizza':true}
 function countPizzas(items=[]){return items.filter(isPizza).reduce((n,i)=>n+Number(i.quantity??1),0)}
 // Chi guarda il menu non vede gli ordini altrui: la coda gliela dice il server.
-function pizzasAhead(){return state.pizzasQueued??state.orders.filter(o=>o.status==='preparing'&&o.paymentStatus!=='awaiting').reduce((n,o)=>n+countPizzas(o.items),0)}
+function pizzasAhead(){return state.pizzasQueued??state.orders.filter(o=>o.status==='preparing'&&o.paymentStatus!=='awaiting'&&isDueNow(o)).reduce((n,o)=>n+countPizzas(o.items),0)}
 function ovenSettings(){return state.services[state.shift]?.oven??DEFAULT_OVEN}
 function waitMinutes(pizzas){return readyInMinutes({ahead:pizzasAhead(),pizzas,...ovenSettings()})}
 function currentClosure(date=resolveBusinessDate(Date.now(),state.activeDay)){const closure=resolveClosure(date,state.calendar.closedWeekdays,state.calendar.exceptions);return {...closure,date,message:closure.message||(closure.closed?'Chiuso per riposo settimanale':'')}}
@@ -92,6 +93,19 @@ function currentClosure(date=resolveBusinessDate(Date.now(),state.activeDay)){co
 // quelle due finestre non si ordina, anche se il servizio fosse rimasto aperto.
 function hoursStatus(){return openingStatus(Date.now())}
 function orderingOpen(){return Boolean(hoursStatus().open&&state.shift&&state.services[state.shift]?.status==='open'&&state.online&&!currentClosure().closed)}
+// Le prenotazioni sono un secondo interruttore, indipendente da "online": si
+// puo' sospendere l'ordine immediato e tenere aperte solo le prenotazioni (o
+// viceversa). Restano pero' dentro un turno gia' aperto: si prenota un
+// orario dentro il servizio vivo, non a cavallo di un turno chiuso.
+function bookingOpen(){return Boolean(hoursStatus().open&&state.shift&&state.services[state.shift]?.status==='open'&&state.bookingsOpen&&!currentClosure().closed)}
+function currentBookableSlots(now=Date.now()){
+  if(!bookingOpen())return [];
+  return bookableSlots({shift:state.shift,hours:SERVICE_HOURS,nowMinutes:zonedMinutes(now)});
+}
+// Un ordine "dovuto adesso": o non e' prenotato, o l'orario prenotato e' gia
+// arrivato. Solo questi contano per la cucina e per la coda del forno; una
+// prenotazione per fra due ore aspetta nella sua scheda finche' non e' ora.
+function isDueNow(order,now=Date.now()){return !order.scheduledFor||Number(order.scheduledFor)<=now}
 // Il messaggio da mostrare quando siamo chiusi per orario: invita a chiamare la
 // pizzeria e dice quando si riapre.
 function closedHoursMessage(){
@@ -128,11 +142,17 @@ function segnaVisto(id){
   seenOrders=new Set([...seenOrders].filter(x=>aperti.has(x)));
   localStorage.setItem('hm-seen-orders',JSON.stringify([...seenOrders]));
 }
-function ordiniNuovi(){return workingOrders(state.orders||[]).filter(nuovoOrdine).length}
+function ordiniNuovi(){return workingOrders(state.orders||[]).filter(isDueNow).filter(nuovoOrdine).length}
+// Le prenotazioni non ancora dovute: stanno per conto loro, cosi' non
+// affollano la coda di cucina prima del tempo. Diventano ordini "di adesso"
+// da sole, appena l'orologio arriva al loro orario.
+function prenotazioni(){return workingOrders(state.orders||[]).filter(o=>!isDueNow(o))}
+function prenotazioniNuove(){return prenotazioni().filter(nuovoOrdine).length}
 // Parole che si capiscono senza sapere come e' fatto il programma: chi apre
 // questo pannello sta lavorando, non deve indovinare cosa c'e' dietro un nome.
 const SEZIONI=[
   ['orders','\u{1F355}','Ordini di adesso'],
+  ['bookings','⏰','Prenotazioni'],
   ['service','\u{1F513}','Apri e chiudi'],
   ['menu','\u{1F4D6}','Il menu'],
   ['history','\u{1F553}','Ordini passati'],
@@ -282,7 +302,8 @@ function confirmBody(){
   const eta=waitMinutes(countPizzas(state.cart.map(i=>({...i,quantity:1}))));
   const metodo=DEMO_PAYMENT_METHODS.find(m=>m.id===confirming.paymentId);
   const proposte=(confirming.suggestions||[]).map(id=>state.menu.find(p=>p.id===id)).filter(Boolean);
-  return `<div class="modal-head"><div><span class="eyebrow">${t('confirm.title')}</span><h2>${t('confirm.when')} ${eta} ${t('status.minutes')}</h2></div></div>
+  const prenotata=confirming.scheduledMinute!=null?minutesToLabel(confirming.scheduledMinute):null;
+  return `<div class="modal-head"><div><span class="eyebrow">${t('confirm.title')}</span><h2>${prenotata?`Prenotata per le ${esc(prenotata)}`:`${t('confirm.when')} ${eta} ${t('status.minutes')}`}</h2></div></div>
     <p class="confirm-sub">${t('confirm.sub')}</p>
     <ul class="confirm-list">${groupCartLines(state.cart).map(riga=>{
       const i=riga.item;
@@ -311,7 +332,27 @@ function confirmBody(){
     </div>
     ${confirming.paymentId==='cash'?'':`<p class="confirm-demo">${t('confirm.demo')}</p>`}`;
 }
-function cart(){const total=state.cart.reduce((n,i)=>n+i.price,0),closed=currentClosure().closed||!hoursStatus().open;return `<div class="cart-head"><h2>${t('cart.title')}</h2><button class="btn secondary" id="cart-close">${t('cart.close')}</button></div>${state.cart.map((i,x)=>{const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',i.note||''].filter(Boolean);return `<div class="cart-line"><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}<p class="cart-allergens">${esc(pallergenLine(i))}</p></div><div class="cart-line-side"><span>${money(i.price)}</span><button class="btn secondary" data-remove="${x}">${t('cart.remove')}</button></div></div>`}).join('')||`<p>${t('cart.empty')}</p>`}<h3 class="cart-total">${t('cart.total')} ${money(total)}</h3>${state.cart.length?`<div class="field"><label>${t('cart.name')}<input id="name" value="${esc(state.contact?.name||'')}"></label></div><div class="field"><label>${t('cart.phone')}<input id="phone" inputmode="tel" value="${esc(state.contact?.phone||'')}"></label></div><div class="field"><label>${t('cart.email')}<input id="email" type="email" inputmode="email" value="${esc(state.contact?.email||'')}"></label></div><div class="field"><span>${t('cart.payment')}</span><div class="payment-grid">${DEMO_PAYMENT_METHODS.map((method,index)=>`<label class="payment-option"><input type="radio" name="payment" value="${method.id}" ${(state.contact?.payment??DEMO_PAYMENT_METHODS[0].id)===method.id?'checked':''}> <b>${translatePaymentMethod(method.id,state.locale)}</b></label>`).join('')}</div></div><button class="btn primary" id="checkout" ${closed?'disabled':''}>${closed?t('product.closed'):t('cart.confirm')}</button>`:''}`}
+function cart(){
+  const total=state.cart.reduce((n,i)=>n+i.price,0);
+  const nowOk=orderingOpen();
+  const slots=currentBookableSlots();
+  const canBook=slots.length>0;
+  // Bloccato solo se non si puo' ne' ordinare adesso ne' prenotare: se anche
+  // uno solo dei due e' aperto, il carrello resta usabile.
+  const bloccato=(currentClosure().closed||!hoursStatus().open)||(!nowOk&&!canBook);
+  return `<div class="cart-head"><h2>${t('cart.title')}</h2><button class="btn secondary" id="cart-close">${t('cart.close')}</button></div>${state.cart.map((i,x)=>{const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',i.note||''].filter(Boolean);return `<div class="cart-line"><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}<p class="cart-allergens">${esc(pallergenLine(i))}</p></div><div class="cart-line-side"><span>${money(i.price)}</span><button class="btn secondary" data-remove="${x}">${t('cart.remove')}</button></div></div>`}).join('')||`<p>${t('cart.empty')}</p>`}<h3 class="cart-total">${t('cart.total')} ${money(total)}</h3>${state.cart.length?`
+    <div class="field"><label>${t('cart.name')}<input id="name" value="${esc(state.contact?.name||'')}"></label></div>
+    <div class="field"><label>${t('cart.phone')}<input id="phone" inputmode="tel" value="${esc(state.contact?.phone||'')}"></label></div>
+    <div class="field"><label>${t('cart.email')}<input id="email" type="email" inputmode="email" value="${esc(state.contact?.email||'')}"></label></div>
+    ${canBook?`<div class="field"><span>Quando la vuoi?</span><div class="booking-choice">
+      <label class="booking-option${nowOk?'':' booking-disabled'}"><input type="radio" name="when" value="now" ${nowOk?'':'disabled'} ${nowOk?'checked':''}> Appena pronta</label>
+      <label class="booking-option"><input type="radio" name="when" value="later" ${nowOk?'':'checked'}> Prenotala per le
+        <select id="booking-slot" ${nowOk?'disabled':''}>${slots.map(s=>`<option value="${s.minute}">${s.label}</option>`).join('')}</select>
+      </label>
+    </div></div>`:''}
+    <div class="field"><span>${t('cart.payment')}</span><div class="payment-grid">${DEMO_PAYMENT_METHODS.map((method,index)=>`<label class="payment-option"><input type="radio" name="payment" value="${method.id}" ${(state.contact?.payment??DEMO_PAYMENT_METHODS[0].id)===method.id?'checked':''}> <b>${translatePaymentMethod(method.id,state.locale)}</b></label>`).join('')}</div></div>
+    <button class="btn primary" id="checkout" ${bloccato?'disabled':''}>${bloccato?t('product.closed'):t('cart.confirm')}</button>`:''}`;
+}
 
 
 function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2><b class="custom-price-live" id="custom-price-live">${pricePath(p.price,price)}</b></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}" data-row="ing-${index}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.length>4?`<div class="field add-search-field"><input id="addition-search" type="search" placeholder="Cerca un'aggiunta\u2026" autocomplete="off"></div>`:''}<div id="addition-list">${customizing.additions.map((addition,index)=>`<div class="option-row${addition.quantity?' picked':''}" data-row="add-${index}" data-name="${esc(String(translateProduct(addition.names??{it:addition.name},state.locale)).toLowerCase())}"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}" ${addition.quantity?'':'disabled'}>\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}</div><div class="allergens"><b>${esc(pallergenLine(p))}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
@@ -319,7 +360,7 @@ function customizer(){const p=customizing.product,price=calculateCustomizedPrice
 // Cucina e Creator sono la stessa area riservata: le comande contengono nome e
 // telefono di chi ordina, non stanno dietro un semplice cambio di scheda.
 function loginPanel(titolo,sottotitolo){return `<div class="card login-card"><span class="eyebrow">Area riservata</span><h1>${titolo}</h1><p>${sottotitolo}</p><div class="field"><label>${runtime.mode==='supabase'?'Email':'Username'}<input id="user" ${runtime.mode==='supabase'?'type="email" autocomplete="username"':''}></label></div><div class="field"><label>Password<input id="pass" type="password" autocomplete="current-password"></label></div><button class="btn primary" id="login">Accedi</button></div>`}
-function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');const nuovi=ordiniNuovi();return `${spiaConnessione()}${editorDraft?orderEditorPanel(editorDraft,state.menu,money,editorOpenLine,editorAdding):''}<div class="admin"><aside class="sidebar">${SEZIONI.map(([id,icona,nome])=>`<button class="btn ${adminSection===id?'primary':'secondary'} admin-nav" data-section="${id}"><span class="nav-ic" aria-hidden="true">${icona}</span>${nome}${id==='orders'&&nuovi?`<span class="badge">${nuovi}</span>`:''}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
+function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');const nuovi=ordiniNuovi();const prenNuove=prenotazioniNuove();const badge={orders:nuovi,bookings:prenNuove};return `${spiaConnessione()}${editorDraft?orderEditorPanel(editorDraft,state.menu,money,editorOpenLine,editorAdding):''}<div class="admin"><aside class="sidebar">${SEZIONI.map(([id,icona,nome])=>`<button class="btn ${adminSection===id?'primary':'secondary'} admin-nav" data-section="${id}"><span class="nav-ic" aria-hidden="true">${icona}</span>${nome}${badge[id]?`<span class="badge">${badge[id]}</span>`:''}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
 function ordersWithAdjustments(){const movements=state.adjustments||[];return (state.orders||[]).map(order=>({...order,adjustments:movements.filter(movement=>String(movement.orderId)===String(order.id))}))}
 function detailOrder(){return detailOrderId?(state.orders||[]).find(o=>String(o.id)===String(detailOrderId)):null}
 function ingredientList(){return (state.ingredients&&state.ingredients.length)?state.ingredients:ingredientCatalog(state.menu)}
@@ -341,10 +382,17 @@ function adminContent(){if(adminSection==='service')return servicePanel(state,Da
   // Qui stanno solo gli ordini ancora da fare: cliccato «Pronto» l'ordine
   // sparisce da questa lista e resta nello Storico, dove si ritrova sempre.
   // Aperti = da preparare e gia' pronti in attesa del cliente. Consegnato li
-  // chiude e li toglie da qui e dalla cucina; restano nello Storico.
-  const daFare=workingOrders(state.orders||[]);
+  // chiude e li toglie da qui e dalla cucina; restano nello Storico. Le
+  // prenotazioni non ancora dovute stanno per conto loro, in un'altra scheda.
+  const daFare=workingOrders(state.orders||[]).filter(isDueNow);
   const attesa=waitMinutes(1);
-  return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dalla pizzeria</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button></div><p class="history-count">${pizzasAhead()} pizze in coda · un ordine di una pizza esce fra ${attesa} minuti</p>${daFare.map(orderCard).join('')||'<div class="card"><h2>Nessun ordine aperto</h2><p>Quelli consegnati sono nello Storico.</p></div>'}${counterDraft?counterOrderPanel(counterDraft,state.menu,money,DEMO_PAYMENT_METHODS):''}${detailOrder()?orderDetailPanel(detailOrder(),money):''}`;
+  return `<h1>Ordini</h1><div class="actions"><button class="btn primary" id="external">+ Ordine dalla pizzeria</button><button class="btn secondary" id="toggle-online">Online: ${state.online?'attivi':'sospesi'}</button><button class="btn secondary" id="toggle-bookings">Prenotazioni: ${state.bookingsOpen?'attive':'sospese'}</button></div><p class="history-count">${pizzasAhead()} pizze in coda · un ordine di una pizza esce fra ${attesa} minuti</p>${daFare.map(orderCard).join('')||'<div class="card"><h2>Nessun ordine aperto</h2><p>Quelli consegnati sono nello Storico.</p></div>'}${counterDraft?counterOrderPanel(counterDraft,state.menu,money,DEMO_PAYMENT_METHODS):''}${detailOrder()?orderDetailPanel(detailOrder(),money):''}`;
+}
+if(adminSection==='bookings'){
+  // Chi ha prenotato per dopo: sparisce da qui da sola quando arriva il suo
+  // orario e si ritrova negli "Ordini di adesso", pronta per la cucina.
+  const inArrivo=prenotazioni();
+  return `<h1>Prenotazioni</h1><div class="actions"><button class="btn secondary" id="toggle-bookings">Prenotazioni: ${state.bookingsOpen?'attive':'sospese'}</button></div><p class="history-count">${inArrivo.length?`${inArrivo.length} in arrivo`:'Nessuna prenotazione in attesa'}</p>${inArrivo.map(orderCard).join('')||'<div class="card"><h2>Nessuna prenotazione</h2><p>Le pizze prenotate per un orario preciso compaiono qui finché non arriva il momento di prepararle.</p></div>'}${detailOrder()?orderDetailPanel(detailOrder(),money):''}`;
 }
 if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||[],money,typeof repository.uploadProductPhoto==='function',menuFilter,menuTab,ingredientList());const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();
   return `<h1>Report</h1><p class="history-count">Giornata ${day||'non ancora aperta'}</p>
@@ -368,14 +416,19 @@ function orderCard(o){
   const pronto=o.status==='ready';
   const attesaPago=o.paymentStatus==='awaiting';
   const nuovo=nuovoOrdine(o)&&!attesaPago;
+  const prenotato=o.scheduledFor?new Date(o.scheduledFor).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Rome'}):null;
   const righe=groupOrderItems(o.items||[]);
   const pizze=righe.filter(isPizza);
   const bibite=righe.filter(i=>!isPizza(i));
   const riga=i=>`${Number(i.quantity??1)}\u00d7 ${i.name}`;
+  const flags=[];
+  if(attesaPago)flags.push('<b class="ordercard-flag pay">In attesa di pagamento</b>');
+  else if(pronto)flags.push('<b class="ordercard-flag">Pronto, da consegnare</b>');
+  if(prenotato)flags.push(`<b class="ordercard-flag booking">Prenotato per le ${esc(prenotato)}</b>`);
   return `<article class="card order ordercard${pronto?' is-ready':''}${nuovo?' is-new':''}${attesaPago?' is-awaiting':''}" data-order="${esc(o.id)}">
     <div class="ordercard-head">
       <span class="ordercard-n">${nuovo?'<i class="dot" aria-label="nuovo"></i>':''}#${String(o.sequence??0).padStart(2,'0')}</span>
-      <div><b>${esc(o.customer||'Cliente')}</b><p>${attesaPago?'<b class="ordercard-flag pay">In attesa di pagamento</b> \u00b7 ':pronto?'<b class="ordercard-flag">Pronto, da consegnare</b> \u00b7 ':''}${esc(String(o.source||'').toLowerCase()==='web'?'dal sito':'in pizzeria')} \u00b7 ordinato ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}${promessi==null?'':` \u00b7 promessi ${promessi} min`}</p></div>
+      <div><b>${esc(o.customer||'Cliente')}</b><p>${flags.length?flags.join(' \u00b7 ')+' \u00b7 ':''}${esc(String(o.source||'').toLowerCase()==='web'?'dal sito':'in pizzeria')} \u00b7 ordinato ${new Date(o.createdAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Rome'})}${promessi==null?'':` \u00b7 promessi ${promessi} min`}</p></div>
       <span class="ordercard-tot">${money(Number(o.total??0))}</span>
     </div>
     ${pizze.length?`<p class="ordercard-items">${esc(pizze.map(riga).join(' \u00b7 '))}</p>`:''}
@@ -390,7 +443,7 @@ function orderCard(o){
   </article>`;
 }
 
-function kitchen(){if(!state.creator)return loginPanel('Cucina','Le comande contengono i dati di chi ordina: serve l accesso del Creator.');return spiaConnessione()+kitchenPanel(state.orders,Date.now(),autoPrint,item=>!isPizza(item))}
+function kitchen(){if(!state.creator)return loginPanel('Cucina','Le comande contengono i dati di chi ordina: serve l accesso del Creator.');return spiaConnessione()+kitchenPanel((state.orders||[]).filter(isDueNow),Date.now(),autoPrint,item=>!isPizza(item))}
 function bind(){
   document.querySelector('#alarm-stop')?.addEventListener('click',fermaAllarme);
   // Riscrivere solo #products lasciava i nuovi bottoni senza gestori: dopo un
@@ -473,6 +526,13 @@ function bind(){
   });
   document.querySelector('#cart-open')?.addEventListener('click',()=>document.querySelector('#cart').classList.remove('hidden'));
   document.querySelector('#cart-close')?.addEventListener('click',()=>document.querySelector('#cart').classList.add('hidden'));
+  // Il menu a tendina degli orari si accende solo quando si sceglie di
+  // prenotare: cosi' non si manda per sbaglio un ordine per un orario che non
+  // si stava nemmeno guardando.
+  document.querySelectorAll('input[name="when"]').forEach(r=>r.onchange=()=>{
+    const slotSel=document.querySelector('#booking-slot');
+    if(slotSel)slotSel.disabled=document.querySelector('input[name="when"][value="later"]')?.checked!==true;
+  });
   document.querySelectorAll('[data-remove]').forEach(b=>b.onclick=()=>{state.cart.splice(+b.dataset.remove,1);save();render()});
   document.querySelectorAll('.lang-pick').forEach(b=>b.onclick=()=>{state.locale=b.dataset.locale;save();render()});
   document.querySelector('#recap-new')?.addEventListener('click',()=>{state.receipt=null;state.receiptDone=false;save();render()});
@@ -482,7 +542,17 @@ function bind(){
     const nome=document.querySelector('#name').value.trim();
     const phone=document.querySelector('#phone').value;
     const email=document.querySelector('#email')?.value.trim()||'';
-    if(!orderingOpen()){const ch=closedHoursMessage();return toast(currentClosure().closed?currentClosure().message:ch?`${ch.tel} · ${ch.quando}`:'Il servizio online non e aperto.')}
+    // "Adesso" o "prenota per dopo": solo uno dei due deve essere davvero
+    // possibile in questo momento, non basta che il bottone sia stato scelto.
+    const quando=document.querySelector('input[name="when"][value="later"]')?.checked?'later':'now';
+    let slotMinuto=null;
+    if(quando==='later'){
+      if(!bookingOpen())return toast('Le prenotazioni non sono attive al momento.');
+      slotMinuto=Number(document.querySelector('#booking-slot')?.value);
+      if(!Number.isFinite(slotMinuto)||!currentBookableSlots().some(s=>s.minute===slotMinuto))return toast('Scegli un orario valido per la prenotazione.');
+    }else if(!orderingOpen()){
+      const ch=closedHoursMessage();return toast(currentClosure().closed?currentClosure().message:ch?`${ch.tel} · ${ch.quando}`:'Il servizio online non e aperto.');
+    }
     // Il nome serve per chiamare chi aspetta, il numero per avvisarlo se
     // qualcosa non va: un ordine intestato a niente e' una pizza che resta li'.
     const nomeEsito=nameCheck(nome);
@@ -503,6 +573,7 @@ function bind(){
       name:nome,
       phone:normalizePhoneNumber(phone),email,
       paymentId:document.querySelector('input[name="payment"]:checked').value,
+      scheduledMinute:quando==='later'?slotMinuto:null,
       // Le proposte si scelgono adesso e non cambiano piu': se sparissero
       // appena tocchi il piu', non potresti prenderne quattro.
       suggestions:orderSuggestions(state.cart,state.menu).map(p=>p.id)
@@ -562,7 +633,12 @@ function bind(){
       if(!ora||ora.status!=='open'){return toast('Il servizio non risulta aperto: chiedi in pizzeria di aprirlo, poi riprova.')}
     }
     const total=state.cart.reduce((n,i)=>n+i.price,0),eta=waitMinutes(countPizzas(cartItems)),businessDate=state.activeDay.date,servizioAttivo=state.services[state.shift],sequence=nextServiceSequence(state.orders,servizioAttivo,state.activeDay),fees=total*payment.feeRate;
-    const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:state.activeDay.id,serviceId:servizioAttivo.id,source:'WEB',customer:dati.name||'Cliente',phone:dati.phone,email:dati.email,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:state.shift,createdAt:Date.now(),readyAt:Date.now()+eta*60000,total,gross:total,fee:fees,fees,items:cartItems};
+    // Prenotata: pronta all'orario scelto, non appena esce dal forno. Il
+    // resto della pipeline (numero, giornata, servizio) resta lo stesso di un
+    // ordine normale: cambia solo QUANDO deve essere pronta.
+    const adesso=Date.now();
+    const scheduledFor=dati.scheduledMinute!=null?slotTimestamp(dati.scheduledMinute,adesso,zonedMinutes(adesso)):null;
+    const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:state.activeDay.id,serviceId:servizioAttivo.id,source:'WEB',customer:dati.name||'Cliente',phone:dati.phone,email:dati.email,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:state.shift,createdAt:adesso,readyAt:scheduledFor??adesso+eta*60000,scheduledFor,total,gross:total,fee:fees,fees,items:cartItems};
     try{
       // Numero pubblico e totale li decide il server: l'anteprima locale
       // servirebbe solo a mostrare un numero che poi cambia.
@@ -578,11 +654,14 @@ function bind(){
         }catch(errore){toast(errore?.message||'Pagamento non avviato.');return}
       }
       const promessi=Number(receipt?.etaMinutes??eta);
+      // Prenotata: l'orario da mostrare e' quello scelto, non la stima
+      // generica del forno (che non sa nulla della prenotazione finche' non
+      // arriva anche sul server).
       state.receiptDone=false;
       state.receipt=buildCustomerRecap({
         ...order,...receipt,
         total:Number(receipt?.total??total),
-        readyAt:order.createdAt+promessi*60000,
+        readyAt:order.scheduledFor??(order.createdAt+promessi*60000),
         items:cartItems
       },{locale:state.locale,pizzeriaPhone:appConfig.pizzeriaPhone??null});
       state.cart=[];confirming=null;orderProgress=null;state.contact=null;save();
@@ -675,6 +754,10 @@ function bind(){
     }catch(error){toast(error?.message?`Non salvato: ${error.message}`:'Non salvato.')}
   });
   document.querySelector('#toggle-online')?.addEventListener('click',async()=>{const service=state.services[state.shift];if(!service)return toast('Apri prima un servizio.');try{await repository.setServiceOnline(service.id,!state.online);if(runtime.mode==='supabase')await refreshRepositoryState();else{state.online=!state.online;save();render()}}catch{reportRepositoryError()}});
+  // Le prenotazioni restano un interruttore solo su questo dispositivo, per
+  // ora: non passano dal server come "online", quindi non si sincronizzano
+  // da sole fra piu' postazioni della pizzeria.
+  document.querySelectorAll('#toggle-bookings').forEach(b=>b.onclick=()=>{state.bookingsOpen=!state.bookingsOpen;save();render();toast(state.bookingsOpen?'Prenotazioni attive.':'Prenotazioni sospese.')});
   function readCounterDraft(){
     if(!counterDraft)return null;
     const val=id=>document.querySelector(id)?.value??'';
