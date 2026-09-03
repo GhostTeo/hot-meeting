@@ -22,6 +22,25 @@ Il flusso e' questo:
 5. Stripe avvisa la funzione `stripe-webhook`, che verifica la firma del
    messaggio e **solo allora** segna l'ordine pagato. La comanda parte da li'.
 
+## Passo zero: creare l'account Stripe
+
+Se non hai ancora un account, si fa su [stripe.com](https://stripe.com), gratis,
+in circa dieci minuti. Serve:
+
+- Email e password.
+- Dati della pizzeria: ragione sociale o partita IVA, indirizzo, settore
+  (ristorazione / food & beverage).
+- **IBAN** dove Stripe deve accreditare gli incassi.
+- Un documento d'identita' per la verifica (Stripe lo chiede prima di farti
+  incassare soldi veri; per fare prove con le chiavi di test non serve
+  completare subito questa parte).
+
+Appena l'account e' creato, **sei gia' in modalita' di prova** (in alto a
+destra nel pannello Stripe c'e' un interruttore "Test mode" / "Modalita' di
+prova", di solito acceso di default): con quella si fanno tutte le prove di
+questa guida, senza IBAN verificato e senza muovere un euro vero. Si passa ai
+soldi veri solo quando la verifica e' completa e si spegne il "Test mode".
+
 ## Cosa mi serve da te
 
 Dal tuo pannello Stripe (Developers → API keys e Developers → Webhooks):

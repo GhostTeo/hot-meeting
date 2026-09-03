@@ -363,8 +363,9 @@ function orderCard(o){
     ${pizze.length?`<p class="ordercard-items">${esc(pizze.map(riga).join(' \u00b7 '))}</p>`:''}
     ${bibite.length?`<div class="ordercard-bar"><span>Da dare al banco</span><b>${esc(bibite.map(riga).join(' \u00b7 '))}</b></div>`:''}
     <div class="actions">
-      ${attesaPago?'':`<button class="btn primary order-close" data-id="${esc(o.id)}">Consegnato</button>`}
-      ${attesaPago||pronto?'':`<button class="btn secondary ready" data-id="${esc(o.id)}">Pronto</button>`}
+      ${attesaPago?'':pronto
+        ? `<button class="btn primary order-close" data-id="${esc(o.id)}">Consegnato</button>`
+        : `<button class="btn primary ready" data-id="${esc(o.id)}">Segna pronto</button>`}
       <button class="btn secondary order-open" data-order="${esc(o.id)}">Dettagli</button>
       ${attesaPago?'':`<button class="btn secondary ticket" data-id="${esc(o.id)}">Stampa</button>`}
     </div>
