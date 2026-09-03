@@ -34,6 +34,20 @@
 }
 
 .modal-head h2 { font-size: 30px; margin: 0 }
+
+/* Il prezzo sta nell'intestazione, che resta incollata in cima mentre si
+   scorre la lista: si vede sempre da dove si parte e quanto e' salito, senza
+   dover arrivare in fondo al bottone per saperlo. L'intestazione e il
+   bottone in fondo non si toccano mai: uno sta fermo sopra, l'altro scorre
+   nel testo e compare solo quando ci si arriva. */
+.custom-price-live {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--serif);
+  font-size: 20px;
+  color: var(--accent-dark);
+  white-space: nowrap;
+}
 .modal h3 { font-size: 15px; text-transform: uppercase; letter-spacing: .1em; font-family: var(--sans); font-weight: 700; color: var(--ink-soft); margin: 24px 0 6px }
 
 .modal-photo {
