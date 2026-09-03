@@ -4,21 +4,21 @@
    (.card, .btn, .grid) cosi' restano coerenti senza un tema separato. */
 
 :root {
-  --paper: #faf6ef;
-  --paper-warm: #f3ebdd;
-  --paper-card: #fffdf9;
-  --ink: #1f1913;
-  --ink-soft: #6d6053;
-  --line: #e6dccb;
-  --accent: #c4452c;
-  --accent-dark: #9c3320;
-  --accent-wash: #fbeee9;
+  --paper: #f6f1e6;
+  --paper-warm: #efe4cd;
+  --paper-card: #fffdf8;
+  --ink: #161210;
+  --ink-soft: #57493a;
+  --line: #d8c49a;
+  --accent: #e0311a;
+  --accent-dark: #a8210e;
+  --accent-wash: #fde3dd;
   --basil: #3d6b4a;
-  --gold: #dfa44b;
-  --shadow: 0 18px 40px rgba(63, 42, 22, .09);
-  --radius: 20px;
+  --gold: #f2a91c;
+  --shadow: 5px 5px 0 rgba(22, 18, 16, .9);
+  --radius: 10px;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, ui-sans-serif, sans-serif;
-  --serif: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --serif: "Anton", "Archivo Black", Impact, "Arial Narrow Bold", sans-serif;
 
   font-family: var(--sans);
   color: var(--ink);
@@ -31,8 +31,9 @@ img { max-width: 100% }
 
 h1, h2, h3 {
   font-family: var(--serif);
-  font-weight: 600;
-  letter-spacing: -.01em;
+  font-weight: 400;
+  letter-spacing: .01em;
+  text-transform: uppercase;
   margin: 0 0 12px;
 }
 
@@ -103,7 +104,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
   padding: clamp(26px, 5vw, 52px);
   border-radius: calc(var(--radius) + 8px);
   overflow: hidden;
-  border: 1px solid var(--line);
+  border: 2px solid var(--ink);
   box-shadow: var(--shadow);
   margin-bottom: 30px;
   background: linear-gradient(140deg, #f7e8d0, #f0d5b2);
@@ -136,22 +137,22 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
     linear-gradient(100deg, rgba(12, 8, 5, .68) 0%, rgba(12, 8, 5, .1) 65%);
 }
 
+/* Il cartellino sta DENTRO al blocco di testo, non incollato in un angolo
+   fisso della foto: un titolo che va su piu' righe (succede coi caratteri
+   grossi) lo spinge in giu' con se' invece di finirci sotto. */
 .menu-hero-tag {
-  position: absolute;
-  top: clamp(20px, 4vw, 34px);
-  left: clamp(20px, 5vw, 52px);
-  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  margin-bottom: 16px;
   padding: 8px 16px;
   border-radius: 99px;
   font-size: 12.5px;
   font-weight: 700;
   letter-spacing: .04em;
   color: #fff;
-  background: rgba(20, 14, 8, .38);
-  border: 1px solid rgba(255, 255, 255, .28);
+  background: rgba(20, 14, 8, .5);
+  border: 2px solid var(--gold);
   backdrop-filter: blur(8px);
 }
 
@@ -160,7 +161,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .menu-hero-content {
   position: relative;
   z-index: 1;
-  max-width: 60%;
+  max-width: 68%;
 }
 
 .eyebrow {
@@ -232,9 +233,9 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
   margin-left: auto;
   padding: 20px 22px;
   border-radius: var(--radius);
-  background: rgba(255, 253, 249, .9);
+  background: rgba(255, 253, 249, .92);
   backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, .5);
+  border: 2px solid var(--ink);
   box-shadow: var(--shadow);
   max-width: 280px;
 }
@@ -256,7 +257,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 }
 
 .status p { margin: 8px 0 0; color: var(--ink-soft); font-size: 14.5px }
-.closed-status { background: var(--accent-wash); border-color: #f0d3ca }
+.closed-status { background: var(--accent-wash); border-color: var(--ink) }
 .closed-status b::before { background: var(--accent); box-shadow: 0 0 0 4px rgba(196, 69, 44, .16) }
 .closure-reason { margin-bottom: 0 }
 
@@ -287,7 +288,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 /* ---------- Bottoni ---------- */
 
 .btn, button.primary {
-  border: 0;
+  border: 2px solid var(--ink);
   border-radius: 12px;
   padding: 12px 18px;
   font: inherit;
@@ -305,10 +306,9 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .secondary {
   background: var(--paper-card);
   color: var(--ink);
-  border: 1px solid var(--line);
 }
 
-.secondary:hover { border-color: #cdbfa9 }
+.secondary:hover { border-color: var(--accent) }
 
 .menu-nav .btn { border-radius: 99px; white-space: nowrap; padding: 10px 20px }
 
@@ -324,7 +324,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 
 .card {
   background: var(--paper-card);
-  border: 1px solid var(--line);
+  border: 2px solid var(--ink);
   border-radius: var(--radius);
   padding: 20px;
   box-shadow: var(--shadow);
@@ -335,14 +335,14 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
   flex-direction: column;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--line);
+  border: 2px solid var(--ink);
   border-radius: var(--radius);
   background: var(--paper-card);
   box-shadow: var(--shadow);
-  transition: transform .16s ease, box-shadow .16s ease;
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
 }
 
-.dish:hover { transform: translateY(-3px); box-shadow: 0 22px 46px rgba(63, 42, 22, .14); border-color: #dcc9a8 }
+.dish:hover { transform: translate(-2px, -2px); box-shadow: 7px 7px 0 rgba(22, 18, 16, .9); border-color: var(--accent) }
 .dish.sold-out { opacity: .62 }
 
 .dish-photo {
@@ -1201,9 +1201,6 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 @media (max-width: 760px) {
   .admin { grid-template-columns: 1fr }
   .menu-hero { flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 12px; min-height: clamp(320px, 78vw, 440px) }
-  /* Niente cartellino appoggiato sopra il titolo: qui torna nel flusso, sopra
-     al testo invece che incollato al bordo della foto. */
-  .menu-hero-tag { position: static; align-self: flex-start }
   .menu-hero-content { max-width: 100% }
   .status { margin-left: 0; max-width: none }
   .topbar { padding: 12px 5vw }
