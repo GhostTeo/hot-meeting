@@ -163,11 +163,13 @@ function customer(){
   const settimanaHero=weeklyPizzas(state.menu);
   const heroDish=settimanaHero[0]||autoWeeklyPizza(state.menu,new Date())||regularPizzas(state.menu)[0];
   const heroFoto=heroImage(heroDish);
+  const heroChiuso=closure.closed||!hoursStatus().open;
   return `<section class="menu-hero">
       ${heroFoto?`<div class="menu-hero-media"><img src="${esc(heroFoto)}" alt="" loading="eager" decoding="async"></div>`:''}
       ${heroDish?`<span class="menu-hero-tag">${settimanaHero.length?t('hero.weekly'):t('hero.today')} \u00b7 ${esc(pname(heroDish))}</span>`:''}
       <div class="menu-hero-content">
         <span class="eyebrow">${t('app.tagline')}</span><h1>${t('app.headline')}</h1><p>${t('app.subtitle')}</p>
+        ${heroDish?`<div class="menu-hero-cta"><button class="btn primary add" data-id="${esc(heroDish.id)}" ${heroChiuso?'disabled':''}>${heroChiuso?t('product.closed'):t('hero.cta')}</button><span class="menu-hero-price">${money(heroDish.price)}</span></div>`:''}
       </div>
       <div class="status ${open?'':'closed-status'}"><b>${open?t('status.open'):t('status.closed')}</b>${closure.closed?`<p class="closure-reason"><strong>${esc(closure.message)}</strong><br>${closure.date}</p>`:closedHours?`<p class="closure-reason"><strong>${esc(closedHours.tel)}</strong><br>${esc(closedHours.quando)}</p>`:`<p>${t('status.wait')}: ${eta}\u2013${eta+5} ${t('status.minutes')}</p>`}</div>
     </section>
@@ -225,9 +227,10 @@ function dishCard(p,closed,weekly=false){
   const ingredients=(p.ingredients||[]).map(name=>localIngredient(name,p.ingredientNames)).join(', ');
   const description=pdesc(p);
   return `<article class="dish${closed?' sold-out':''}${weekly?' dish-weekly':''}">
-      ${weekly?'<span class="dish-weekly-badge">Pizza della settimana</span>':''}
+      ${weekly?`<span class="dish-weekly-badge">${t('hero.weekly')}</span>`:''}
       ${dishPhoto(p)}
       <div class="dish-body">
+        ${weekly?`<span class="dish-weekly-social">${t('hero.social')}</span>`:''}
         <h2>${esc(pname(p))}</h2>
         ${ingredients?`<p class="dish-ingredients">${esc(ingredients)}</p>`:''}
         ${description?`<p class="dish-desc">${esc(description)}</p>`:''}

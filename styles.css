@@ -183,6 +183,30 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .menu-hero p { margin: 0; color: var(--ink-soft); font-size: 17px; max-width: 46ch }
 .menu-hero-content p { color: rgba(255, 253, 249, .88); text-shadow: 0 2px 12px rgba(0, 0, 0, .22) }
 
+/* Il pulsante che porta dritti alla pizza della settimana: la foto da sola fa
+   venire fame, questo la trasforma subito in un ordine. */
+.menu-hero-cta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 22px;
+}
+
+.menu-hero-cta .btn {
+  border-radius: 99px;
+  padding: 15px 30px;
+  font-size: 15.5px;
+  box-shadow: 0 14px 30px rgba(196, 69, 44, .38);
+}
+
+.menu-hero-price {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .3);
+}
+
 .status {
   position: relative;
   z-index: 1;
@@ -398,6 +422,51 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 
 .dish-allergens.none { color: var(--ink-soft); background: var(--paper-warm) }
 .cart-allergens { margin: 5px 0 0 !important; font-size: 12px; color: #8a5a1e }
+
+/* Pizza della settimana: una fascia in evidenza in cima al menu pizze. */
+/* La pizza della settimana non e' una scheda come le altre: e' un piccolo
+   "banco in vetrina" a parte, foto grande accanto al testo, cosi' e' la prima
+   cosa che si nota e la piu' facile da ordinare d'istinto. Il resto del menu
+   resta subito sotto, nella sua griglia normale, senza essere penalizzato. */
+.dish-weekly-band {
+  grid-column: 1 / -1;
+  margin: 0 0 32px;
+  padding: clamp(18px, 3vw, 28px) clamp(18px, 3vw, 30px) clamp(22px, 3vw, 32px);
+  border-radius: calc(var(--radius) + 6px);
+  background: linear-gradient(160deg, var(--paper-warm), var(--paper-card) 65%);
+  border: 1px solid #ecd9b3;
+}
+
+.dish-weekly-title { margin: 0 0 16px; font-family: var(--serif); font-size: clamp(1.3rem, 2.3vw, 1.6rem); color: var(--accent-dark); }
+.dish-weekly-title::before { content: "★"; margin-right: 9px; color: var(--gold); }
+.dish-weekly-band .dish-grid { grid-template-columns: 1fr }
+
+.dish-weekly {
+  position: relative;
+  flex-direction: row;
+  border: 2px solid var(--gold);
+  box-shadow: 0 26px 54px rgba(196, 138, 44, .24);
+}
+
+.dish-weekly .dish-photo { flex: 0 0 45%; aspect-ratio: auto }
+.dish-weekly .dish-body { flex: 1; justify-content: center; gap: 10px; padding: clamp(20px, 3vw, 32px) clamp(20px, 3vw, 34px) }
+.dish-weekly .dish-body h2 { font-size: clamp(24px, 3vw, 32px) }
+.dish-weekly .price { font-size: clamp(24px, 3vw, 30px) }
+.dish-weekly .dish-foot .btn { padding: 13px 24px; font-size: 15.5px }
+
+.dish-weekly-badge { position: absolute; top: 14px; left: 14px; z-index: 2; padding: 5px 13px; border-radius: 99px; background: var(--gold); color: #3a2708; font-size: .76rem; font-weight: 800; letter-spacing: .02em; box-shadow: 0 8px 18px rgba(120, 84, 22, .28) }
+
+.dish-weekly-social {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--accent-dark);
+}
+
+.dish-weekly-social::before { content: "🔥" }
 
 /* ---------- Barra carrello ---------- */
 
@@ -1099,6 +1168,9 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
   .dish-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px }
   .dish-body { padding: 14px 14px 16px }
   .dish-body h2 { font-size: 20px }
+  .dish-weekly { flex-direction: column }
+  .dish-weekly .dish-photo { flex: none; aspect-ratio: 4 / 3 }
+  .menu-hero-cta { flex-wrap: wrap; margin-top: 18px }
   .drawer { right: 12px; left: 12px; width: auto; bottom: 12px }
   .dialog-actions { flex-direction: column-reverse }
   .dialog-actions .btn { width: 100% }
@@ -1152,13 +1224,6 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .income-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .income-table tfoot td { border-top: 2px solid var(--ink); border-bottom: none; font-weight: 600; }
 .income-online { display: inline-block; margin-left: 4px; padding: 1px 7px; border-radius: 99px; background: var(--accent-wash); color: var(--accent-dark); font-size: .72rem; font-weight: 700; }
-
-/* Pizza della settimana: una fascia in evidenza in cima al menu pizze. */
-.dish-weekly-band { grid-column: 1 / -1; margin-bottom: 6px; padding: 4px 0 14px; border-bottom: 1px dashed var(--line); }
-.dish-weekly-title { margin: 0 0 12px; font-family: var(--serif); font-size: 1.25rem; color: var(--accent); }
-.dish-weekly-title::before { content: "★"; margin-right: 8px; color: var(--gold); }
-.dish-weekly { position: relative; border: 1.5px solid var(--gold); box-shadow: var(--shadow); }
-.dish-weekly-badge { position: absolute; top: 10px; left: 10px; z-index: 2; padding: 3px 10px; border-radius: 99px; background: var(--gold); color: #3a2708; font-size: .72rem; font-weight: 800; letter-spacing: .02em; }
 
 /* Allarme nuovo ordine: fascia grande e insistente in alto, resta finche' non
    la si tocca (il suono e la vibrazione vanno in coppia con questa). */
