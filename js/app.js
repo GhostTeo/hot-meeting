@@ -166,8 +166,8 @@ function customer(){
   const heroChiuso=closure.closed||!hoursStatus().open;
   return `<section class="menu-hero">
       ${heroFoto?`<div class="menu-hero-media"><img src="${esc(heroFoto)}" alt="" loading="eager" decoding="async"></div>`:''}
-      ${heroDish?`<span class="menu-hero-tag">${settimanaHero.length?t('hero.weekly'):t('hero.today')} \u00b7 ${esc(pname(heroDish))}</span>`:''}
       <div class="menu-hero-content">
+        ${heroDish?`<span class="menu-hero-tag">${settimanaHero.length?t('hero.weekly'):t('hero.today')} \u00b7 ${esc(pname(heroDish))}</span>`:''}
         <span class="eyebrow">${t('app.tagline')}</span><h1>${t('app.headline')}</h1><p>${t('app.subtitle')}</p>
         ${heroDish?`<div class="menu-hero-cta"><button class="btn primary add" data-id="${esc(heroDish.id)}" ${heroChiuso?'disabled':''}>${heroChiuso?t('product.closed'):t('hero.cta')}</button><span class="menu-hero-price">${money(heroDish.price)}</span></div>`:''}
       </div>
@@ -319,6 +319,20 @@ function creator(){if(!state.creator)return loginPanel('Creator','Entra per gest
 function ordersWithAdjustments(){const movements=state.adjustments||[];return (state.orders||[]).map(order=>({...order,adjustments:movements.filter(movement=>String(movement.orderId)===String(order.id))}))}
 function detailOrder(){return detailOrderId?(state.orders||[]).find(o=>String(o.id)===String(detailOrderId)):null}
 function ingredientList(){return (state.ingredients&&state.ingredients.length)?state.ingredients:ingredientCatalog(state.menu)}
+// Le aggiunte non sono solo quelle scritte apposta per questa pizza: ogni
+// ingrediente che compare da qualche parte nel menu (base o aggiunta di
+// un'altra pizza) si puo' aggiungere a qualunque pizza. Il prezzo e' quello
+// gia' noto nel catalogo (0 se non e' mai stato venduto come aggiunta); il
+// Creator lo aggiusta una volta sola da Menu > Ingredienti e vale ovunque.
+function allAdditionsFor(product){
+  const curate=withDefaultAdditions(product);
+  const visti=new Set(curate.map(a=>String(a?.name??'').trim().toLowerCase()));
+  const extra=ingredientList()
+    .filter(ing=>ing.available!==false)
+    .filter(ing=>!visti.has(String(ing.name??'').trim().toLowerCase()))
+    .map(ing=>({name:ing.name,price:Number(ing.price||0)}));
+  return [...curate,...extra];
+}
 function adminContent(){if(adminSection==='service')return servicePanel(state,Date.now());if(adminSection==='calendar')return calendarPanel(state.calendar);if(adminSection==='history')return orderHistoryPanel(state.orders,historyFilters,state.adjustments||[],money);if(adminSection==='orders'){
   // Qui stanno solo gli ordini ancora da fare: cliccato «Pronto» l'ordine
   // sparisce da questa lista e resta nello Storico, dove si ritrova sempre.
@@ -381,7 +395,7 @@ function bind(){
     document.querySelectorAll('.add').forEach(b=>b.onclick=()=>{
       const product=state.menu.find(x=>x.id===b.dataset.id);
       if(!product)return toast('Questo prodotto non e piu in menu.');
-      customizing={product,removed:[],additions:withDefaultAdditions(product).map(a=>({...a,quantity:0})),note:''};
+      customizing={product,removed:[],additions:allAdditionsFor(product).map(a=>({...a,quantity:0})),note:''};
       render();
     });
   }
@@ -507,7 +521,7 @@ function bind(){
     document.querySelectorAll('[data-suggest]').forEach(b=>b.onclick=()=>{
       const product=state.menu.find(x=>x.id===b.dataset.suggest);
       if(!product)return;
-      state.cart.push({...product,price:product.price,removed:[],additions:withDefaultAdditions(product).map(a=>({...a,quantity:0})),note:''});
+      state.cart.push({...product,price:product.price,removed:[],additions:allAdditionsFor(product).map(a=>({...a,quantity:0})),note:''});
       save();haptic();refreshConfirm();
     });
     document.querySelectorAll('[data-suggest-minus]').forEach(b=>b.onclick=()=>{
