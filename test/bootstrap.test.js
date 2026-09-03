@@ -108,7 +108,7 @@ test('repository remoto cambia accesso quando cambia la sessione autenticata', a
   const unsubscribe = runtime.auth.onChange(() => {});
 
   await runtime.repository.getState();
-  assert.deepEqual(selected, ['products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'pizzeria_settings']);
+  assert.deepEqual(selected, ['products', 'public_opening_status', 'public_closure_calendar', 'allergens', 'public_queue_status', 'pizzeria_settings', 'public_booking_slots']);
   selected.length = 0;
   authListener('SIGNED_IN', { user: { app_metadata: { role: 'creator' } } });
   await runtime.repository.getState();

@@ -35,9 +35,29 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
     const calendar = Array.isArray(state.closures)
       ? calendarFromClosures(state.closures)
       : (state.calendar ?? { closedWeekdays: [], exceptions: [] });
+    // In locale c'e' gia' tutta la visibilita' sugli ordini: si contano le
+    // pizze prenotate per quarto d'ora direttamente da quelli, invece di
+    // dover tenere un'altra vista finta come lato Supabase.
+    const isPizzaItem = item => {
+      const product = (state.menu ?? []).find(p => String(p.databaseId ?? p.id) === String(item.productId ?? item.id));
+      return product ? product.type === 'pizza' : true;
+    };
+    const bookedSlots = [];
+    const bySlot = new Map();
+    for (const order of state.orders ?? []) {
+      if (!order.scheduledFor || !['received', 'preparing', 'ready'].includes(order.status)) continue;
+      const pizzas = (order.items ?? []).reduce((n, item) => n + (isPizzaItem(item) ? Number(item.quantity ?? 1) : 0), 0);
+      const key = `${order.serviceId}:${order.scheduledFor}`;
+      const entry = bySlot.get(key) ?? { serviceId: order.serviceId, at: order.scheduledFor, pizzas: 0 };
+      entry.pizzas += pizzas;
+      bySlot.set(key, entry);
+    }
+    bookedSlots.push(...bySlot.values());
     return copy({
       ...state, calendar, adjustments: state.adjustments ?? [],
       shift: open?.shift ?? null, online: open?.online ?? false,
+      bookingsOpen: open?.bookingsOpen ?? false,
+      bookedSlots,
       ovenDefaults: state.ovenDefaults ?? null
     });
   }
@@ -268,6 +288,15 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       const service = state.services[serviceId] ?? Object.values(state.services).find(candidate => candidate?.id === serviceId);
       if (!service) throw new Error(`Servizio ${serviceId} non trovato`);
       service.online = enabled;
+      persist();
+      emit('services');
+      return copy(service);
+    },
+
+    async setServiceBookings(serviceId, enabled) {
+      const service = state.services[serviceId] ?? Object.values(state.services).find(candidate => candidate?.id === serviceId);
+      if (!service) throw new Error(`Servizio ${serviceId} non trovato`);
+      service.bookingsOpen = enabled;
       persist();
       emit('services');
       return copy(service);

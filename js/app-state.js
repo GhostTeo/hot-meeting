@@ -9,6 +9,8 @@ export function applyRepositorySnapshot(state, snapshot) {
     activeDay: snapshot.activeDay,
     shift: snapshot.shift,
     online: snapshot.online,
+    bookingsOpen: snapshot.bookingsOpen ?? false,
+    bookedSlots: snapshot.bookedSlots ?? [],
     orders: snapshot.orders,
     pizzasQueued: snapshot.pizzasQueued ?? null,
     ovenDefaults: snapshot.ovenDefaults ?? state.ovenDefaults ?? null,
