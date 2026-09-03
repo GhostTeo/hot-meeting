@@ -1,12 +1,9 @@
 {
   "name": "Hot Meeting",
-  "//": "GitHub Codespace per Hot Meeting. Apri il repo su github.com da QUALSIASI dispositivo, crea un Codespace: parte VS Code nel browser + il server dell'app sulla porta 4173 (in automatico) + Claude Code gia' installato (comando: claude).",
-  "image": "mcr.microsoft.com/devcontainers/universal:2",
-  "//features": "Feature ufficiale Anthropic: pre-installa la CLI di Claude Code (comando 'claude' nel terminale). Il pannello grafico con le foto arriva invece dall'estensione in 'customizations' qui sotto.",
-  "features": {
-    "ghcr.io/anthropic/claude-code:latest": {}
-  },
-  "//customizations": "Preinstalla l'ESTENSIONE grafica di Claude Code in VS Code: pannello di chat con supporto foto, niente terminale. Nel Codespace basta cliccare l'icona di Claude nella barra laterale e fare login. Cosi' si lavora come sul Mac.",
+  "//": "GitHub Codespace per Hot Meeting. Apri il repo su github.com da QUALSIASI dispositivo, crea un Codespace: parte VS Code nel browser + Node gia' presente + Claude Code installato (comando: claude) + l'anteprima della pizzeria sulla porta 4173 (in automatico).",
+  "//image": "Immagine ufficiale con Node 20 gia' dentro: cosi' 'npm' e 'node' ci sono sempre, senza sorprese.",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "//customizations": "Preinstalla l'ESTENSIONE grafica di Claude Code in VS Code: pannello di chat con supporto foto. Basta cliccare l'icona di Claude nella barra laterale e fare login.",
   "customizations": {
     "vscode": {
       "extensions": ["anthropic.claude-code"]
@@ -19,6 +16,8 @@
       "onAutoForward": "openPreview"
     }
   },
-  "//postStartCommand": "Serve i file statici (index.html + moduli) sulla porta 4173, come 'python3 -m http.server 4173' in locale (vedi README). In background, cosi' il terminale resta libero.",
-  "postStartCommand": "nohup python3 -m http.server 4173 >/tmp/hotmeeting-dev.log 2>&1 &"
+  "//postCreateCommand": "Alla creazione del Codespace installa la CLI di Claude (comando 'claude') e un piccolo server statico (http-server). Node c'e' gia' dall'immagine.",
+  "postCreateCommand": "npm install -g @anthropic-ai/claude-code http-server",
+  "//postStartCommand": "Ad ogni avvio serve i file statici (index.html + moduli) sulla porta 4173, come nel README. In background, cosi' il terminale resta libero.",
+  "postStartCommand": "nohup npx --yes http-server -p 4173 -c-1 . >/tmp/hotmeeting-dev.log 2>&1 &"
 }
