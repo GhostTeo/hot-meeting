@@ -139,3 +139,35 @@
 .payment-option:has(input:checked) { border-color: var(--accent); background: var(--accent-wash) }
 .payment-option input { width: auto; flex: none }
 .payment-option b { flex: 1; font-size: 15px }
+
+/* Adesso o prenotata: due righe, non due schermate. La tendina degli orari
+   si accende solo quando si sceglie "prenotala", cosi' non resta un campo
+   spento a confondere chi vuole solo la pizza il prima possibile. */
+.booking-choice { display: grid; gap: 10px }
+
+.booking-option {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 13px 14px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  cursor: pointer;
+  background: var(--paper-card);
+  font-size: 14.5px;
+}
+
+.booking-option:has(input:checked) { border-color: var(--accent); background: var(--accent-wash) }
+.booking-option.booking-disabled { opacity: .5; cursor: not-allowed }
+.booking-option input[type="radio"] { width: auto; flex: none }
+
+.booking-option select {
+  padding: 9px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  font: inherit;
+  background: var(--paper-card);
+}
+
+.booking-option select:disabled { opacity: .5 }

@@ -34,7 +34,7 @@ function escapeHtml(value = '') {
 }
 
 function clock(value) {
-  return value ? new Date(value).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+  return value ? new Date(value).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }) : '--:--';
 }
 
 function riga(item) {
