@@ -33,8 +33,9 @@ Dal database non si vede l'indirizzo IP di chi ordina: per fermare un
 programma che cambia numero di telefono a ogni ordine serve un passaggio in
 piu', la Edge Function `place-order`, che:
 
-1. conta gli ordini per indirizzo IP (6 al minuto, 40 al giorno) con
-   `rate_limit_hit` sulla tabella `rate_buckets`;
+1. conta gli ordini per indirizzo IP (10 al minuto, 120 al giorno: larghi
+   apposta, perche' sulle reti mobili tanti clienti diversi condividono lo
+   stesso indirizzo) con `rate_limit_hit` sulla tabella `rate_buckets`;
 2. verifica il captcha di **Cloudflare Turnstile** (gratuito, invisibile per
    quasi tutti gli utenti veri);
 3. solo allora chiama `create_public_order`.
@@ -44,16 +45,20 @@ Per accenderla:
 1. Su <https://dash.cloudflare.com> → Turnstile → *Add site*: dominio
    `ghostteo.github.io` (o il dominio del sito), modalita' *Managed*. Prendi
    la **Site Key** (pubblica) e la **Secret Key**.
-2. Segreti e pubblicazione (dal computer con la CLI Supabase collegata):
+2. Pubblicare la funzione. Senza CLI, dal pannello Supabase: **Edge
+   Functions → Deploy a new function → Via Editor**, nome `place-order`,
+   incollare il contenuto di `supabase/functions/place-order/index.ts`,
+   *Deploy*. Poi nei dettagli della funzione spegnere **Verify JWT** (il
+   cliente non e' loggato: la funzione si protegge da sola con captcha e
+   contatori). In **Edge Functions → Secrets** aggiungere `TURNSTILE_SECRET`
+   (la Secret Key) e `SITE_ORIGIN` = `https://ghostteo.github.io`.
+
+   Con la CLI, equivalente:
 
    ```bash
-   supabase secrets set TURNSTILE_SECRET=0x4AAA...
-   supabase secrets set SITE_ORIGIN=https://ghostteo.github.io
+   supabase secrets set TURNSTILE_SECRET=0x4AAA... SITE_ORIGIN=https://ghostteo.github.io
    supabase functions deploy place-order --no-verify-jwt
    ```
-
-   `--no-verify-jwt` serve perche' il cliente non e' loggato: la funzione si
-   protegge da sola con captcha e contatori.
 3. In `js/config.js`:
 
    ```js
