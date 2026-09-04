@@ -1325,3 +1325,8 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .legal-page h2 { font-size: 20px; margin: 34px 0 8px; scroll-margin-top: 20px }
 .legal-page p, .legal-page li { font-size: 15px }
 .legal-page .placeholder { background: #fff2c2; padding: 0 4px; border-radius: 4px }
+
+/* Il captcha davanti all'invio: al centro, con aria intorno. */
+.turnstile-box { display: flex; justify-content: center; margin: 14px 0 4px; min-height: 0 }
+.turnstile-box:empty { display: none }
+.admin-logout { margin-top: 18px; opacity: .8 }

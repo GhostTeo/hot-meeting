@@ -250,3 +250,36 @@ test('ogni modifica al menu lascia una traccia negli eventi', () => {
   assert.match(sql, /upsert_menu_product[\s\S]*?insert into public\.events/i);
   assert.match(sql, /delete_menu_product[\s\S]*?insert into public\.events/i);
 });
+
+// L'ULTIMA definizione di create_public_order deve tenere tutte le difese: due
+// riscritture per le prenotazioni erano ripartite dal corpo iniziale e le
+// avevano perse senza che nessuno se ne accorgesse.
+test('l ultima create_public_order conserva le difese contro nomi finti, telefoni finti e alluvioni', () => {
+  const files = readdirSync(migrationsUrl).filter(name => name.endsWith('.sql')).sort();
+  const definizioni = files
+    .map(name => ({ name, sql: readFileSync(new URL(name, migrationsUrl), 'utf8') }))
+    .filter(({ sql }) => /create or replace function public\.create_public_order\(payload jsonb\)/i.test(sql));
+  const ultima = definizioni[definizioni.length - 1];
+  const inizio = ultima.sql.search(/create or replace function public\.create_public_order\(payload jsonb\)/i);
+  const corpo = ultima.sql.slice(inizio, ultima.sql.indexOf('$$;', inizio));
+  for (const difesa of [
+    'public.looks_like_name(v_name)',
+    'public.normalize_phone(v_phone)',
+    'public.is_valid_phone(v_phone)',
+    'too many recent orders for this phone',
+    'too many orders right now',
+    'too many orders today',
+    'a booking needs at least one pizza',
+    'requested time slot is full',
+    'unknown top-level key'
+  ]) {
+    assert.ok(corpo.includes(difesa), `${ultima.name}: manca la difesa «${difesa}»`);
+  }
+});
+
+test('le funzioni riservate non restano chiamabili dall anonimo', () => {
+  const sql = allMigrationsSql();
+  for (const firma of ['set_product_photo(uuid, text)', 'set_service_oven(uuid, integer, integer, integer)', 'order_ready_minutes(uuid)', 'rate_limit_hit(text, integer, interval)', 'set_bookings_enabled(boolean)']) {
+    assert.ok(sql.includes(`revoke all on function public.${firma} from public, anon, authenticated`), `manca la revoca per ${firma}`);
+  }
+});
