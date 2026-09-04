@@ -95,6 +95,8 @@ const DICTIONARY = {
     'custom.note': 'Note per questa pizza',
     'custom.notePlaceholder': 'Es. allergia alle noci, celiaco, ben cotta…',
     'custom.add': 'Aggiungi al carrello',
+    'custom.from': 'da',
+    'custom.base': 'prezzo base',
     'allergens.warning': 'In caso di allergie o intolleranze scrivilo nelle note e contatta il locale. Può verificarsi contaminazione crociata.'
   },
   en: {
@@ -186,6 +188,8 @@ const DICTIONARY = {
     'custom.note': 'Note for this pizza',
     'custom.notePlaceholder': 'E.g. nut allergy, coeliac, well done…',
     'custom.add': 'Add to cart',
+    'custom.from': 'from',
+    'custom.base': 'base price',
     'allergens.warning': 'If you have allergies or intolerances write it in the notes and contact the venue. Cross contamination may occur.'
   }
 };
