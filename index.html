@@ -23,24 +23,45 @@
   <!-- Un solo carattere da scaricare: per il testo si usa quello di sistema, che
        su iPhone e Android e' gia' li' e non pesa niente. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&display=swap">
-  <link rel="stylesheet" href="styles.css?v=20260903-7">
-  <link rel="stylesheet" href="customization.css?v=20260903-7">
+  <link rel="stylesheet" href="styles.css?v=20260904-1">
+  <link rel="stylesheet" href="customization.css?v=20260904-1">
 </head>
 <body>
   <header class="topbar">
-    <button class="brand" data-view="customer">Hot Meeting <small>Milano · Piola</small></button>
+    <button class="brand" data-view="customer">Hot Meeting <small>Ristorante · Milano</small></button>
     <div id="topbar-side"></div>
   </header>
   <main id="app" aria-live="polite"></main>
   <footer class="staff">
-    <small>Hot Meeting · Milano, zona Piola · versione <b id="build-tag">2026-09-03·7</b></small>
+    <small>Ristorante Hot Meeting · Milano · versione <b id="build-tag">2026-09-04·1</b></small>
     <button data-view="customer">Menu</button>
     <button data-view="creator">Creator</button>
     <button data-view="kitchen">Cucina</button>
   </footer>
+  <footer class="legal" id="legal">
+    <div class="legal-row">
+      <div>
+        <b>Ristorante Hot Meeting</b><br>
+        <span id="legal-address">Milano (MI)</span><br>
+        Tel. <a href="tel:+390270600072">02 7060 0072</a>
+      </div>
+      <div>
+        <span id="legal-company">Ragione sociale, sede legale, P.IVA, C.F. e REA: <em>da inserire</em></span><br>
+        PEC / e-mail: <em>da inserire</em>
+      </div>
+    </div>
+    <nav class="legal-links" aria-label="Informazioni legali">
+      <a href="note-legali.html#privacy">Privacy</a>
+      <a href="note-legali.html#cookie">Cookie</a>
+      <a href="note-legali.html#termini">Termini di vendita e prenotazione</a>
+      <a href="note-legali.html#allergeni">Allergeni</a>
+      <a href="note-legali.html#titolare">Note legali</a>
+    </nav>
+    <p class="legal-fine">Prezzi in euro, IVA inclusa. Le informazioni sugli allergeni (Reg. UE 1169/2011) sono riportate su ogni piatto: per esigenze particolari contatta il locale prima di ordinare. Pagamento online gestito da Stripe: nessun dato di carta transita o viene conservato da questo sito. Copyright © Ristorante Hot Meeting. Tutti i diritti riservati.</p>
+  </footer>
   <div id="toast" role="status"></div>
   <div id="print-area" aria-hidden="true"></div>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20260903-7"></script>
+  <script type="module" src="js/app.js?v=20260904-1"></script>
 </body>
 </html>

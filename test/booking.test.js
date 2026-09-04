@@ -110,3 +110,81 @@ test('senza un limite di capienza tutti gli slot restano prenotabili', () => {
   assert.ok(slots.length > 0);
   assert.equal(slots[0].remaining, null);
 });
+
+// ---- Giorno prenotabile, fusi orari e chiusure ----
+import { nextBookingDay, romeTimestamp, romeDate, nextDate, bookingLabel } from '../js/booking.js';
+
+test('romeTimestamp: ora legale (settembre) e ora solare (gennaio) danno l istante giusto', () => {
+  assert.equal(new Date(romeTimestamp('2026-09-04', 12 * 60)).toISOString(), '2026-09-04T10:00:00.000Z');
+  assert.equal(new Date(romeTimestamp('2026-01-10', 19 * 60 + 30)).toISOString(), '2026-01-10T18:30:00.000Z');
+});
+
+test('romeDate e nextDate ragionano sul calendario di Roma', () => {
+  // Le 23:30 UTC del 4 settembre sono gia' il 5 a Roma.
+  assert.equal(romeDate(Date.parse('2026-09-04T23:30:00Z')), '2026-09-05');
+  assert.equal(nextDate('2026-09-30'), '2026-10-01');
+});
+
+test('bookableSlots per un giorno futuro (nowMinutes null) parte dall apertura del turno', () => {
+  const slots = bookableSlots({ shift: 'lunch', hours, nowMinutes: null });
+  assert.equal(slots[0].label, '12:00');
+});
+
+test('bookableSlots prima dell apertura non propone orari prima del turno', () => {
+  // Alle 10:00 il pranzo non e' ancora iniziato: il primo slot e' le 12:00, non le 10:30.
+  const slots = bookableSlots({ shift: 'lunch', hours, nowMinutes: 10 * 60 });
+  assert.equal(slots[0].label, '12:00');
+});
+
+test('nextBookingDay: alle 16 (fra i turni) si prenota per la cena di oggi', () => {
+  const now = Date.parse('2026-09-04T16:00:00+02:00');
+  const giorno = nextBookingDay({ now, hours });
+  assert.equal(giorno.date, '2026-09-04');
+  assert.equal(giorno.today, true);
+  assert.ok(giorno.slots.every(s => s.shift === 'dinner'));
+  assert.equal(giorno.slots[0].label, '19:00');
+  assert.equal(new Date(giorno.slots[0].at).toISOString(), '2026-09-04T17:00:00.000Z');
+});
+
+test('nextBookingDay: durante il pranzo propone il resto del pranzo e tutta la cena', () => {
+  const now = Date.parse('2026-09-04T12:30:00+02:00');
+  const giorno = nextBookingDay({ now, hours });
+  assert.equal(giorno.slots[0].shift, 'lunch');
+  assert.equal(giorno.slots[0].label, '13:00');
+  assert.ok(giorno.slots.some(s => s.shift === 'dinner' && s.label === '19:00'));
+});
+
+test('nextBookingDay: dopo la cena si passa a domani a pranzo', () => {
+  const now = Date.parse('2026-09-04T22:30:00+02:00');
+  const giorno = nextBookingDay({ now, hours });
+  assert.equal(giorno.date, '2026-09-05');
+  assert.equal(giorno.today, false);
+  assert.equal(giorno.slots[0].label, '12:00');
+});
+
+test('nextBookingDay: chiusi oggi e domani, si prenota solo per il giorno dopo la chiusura', () => {
+  const now = Date.parse('2026-09-04T10:00:00+02:00');
+  const chiusi = new Set(['2026-09-04', '2026-09-05']);
+  const giorno = nextBookingDay({ now, hours, isClosed: date => chiusi.has(date) });
+  assert.equal(giorno.date, '2026-09-06');
+});
+
+test('nextBookingDay: senza giorni aperti nell orizzonte non c e niente', () => {
+  const now = Date.parse('2026-09-04T10:00:00+02:00');
+  assert.equal(nextBookingDay({ now, hours, isClosed: () => true }), null);
+});
+
+test('nextBookingDay: le pizze gia prenotate si confrontano con la capienza del giorno giusto', () => {
+  const now = Date.parse('2026-09-04T16:00:00+02:00');
+  const pieno = romeTimestamp('2026-09-04', 19 * 60);
+  const altroGiorno = romeTimestamp('2026-09-05', 19 * 60 + 15);
+  const giorno = nextBookingDay({ now, hours, capacity: 18, booked: [{ at: pieno, pizzas: 18 }, { at: altroGiorno, pizzas: 18 }] });
+  assert.ok(!giorno.slots.some(s => s.label === '19:00'));
+  assert.ok(giorno.slots.some(s => s.label === '19:15'));
+});
+
+test('bookingLabel: solo l ora se e per oggi, anche il giorno se e per un altro giorno', () => {
+  const now = Date.parse('2026-09-04T16:00:00+02:00');
+  assert.equal(bookingLabel(romeTimestamp('2026-09-04', 19 * 60 + 30), { now }), '19:30');
+  assert.match(bookingLabel(romeTimestamp('2026-09-06', 12 * 60), { now }), /6 set.*12:00/);
+});

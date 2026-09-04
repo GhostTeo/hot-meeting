@@ -56,7 +56,7 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
     return copy({
       ...state, calendar, adjustments: state.adjustments ?? [],
       shift: open?.shift ?? null, online: open?.online ?? false,
-      bookingsOpen: open?.bookingsOpen ?? false,
+      bookingsOpen: Boolean(state.bookingsOpen),
       bookedSlots,
       ovenDefaults: state.ovenDefaults ?? null
     });
@@ -293,13 +293,11 @@ export function createLocalRepository({ initialState = {}, storage, storageKey =
       return copy(service);
     },
 
-    async setServiceBookings(serviceId, enabled) {
-      const service = state.services[serviceId] ?? Object.values(state.services).find(candidate => candidate?.id === serviceId);
-      if (!service) throw new Error(`Servizio ${serviceId} non trovato`);
-      service.bookingsOpen = enabled;
+    async setBookingsEnabled(enabled) {
+      state.bookingsOpen = Boolean(enabled);
       persist();
       emit('services');
-      return copy(service);
+      return state.bookingsOpen;
     },
 
     async createOrder(order) {

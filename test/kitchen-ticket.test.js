@@ -100,3 +100,18 @@ test('senza bibite non compare nessuna sezione al banco', () => {
 
   assert.deepEqual(ticket.filter(row => row.kind === 'section'), []);
 });
+
+test('una prenotazione si annuncia subito sotto il numero, con giorno e ora di Roma', () => {
+  const prenotata = { ...ordine, scheduledFor: Date.parse('2026-09-06T17:30:00Z') };
+  const ticket = buildKitchenTicket(prenotata);
+
+  assert.equal(ticket[0].kind, 'number');
+  assert.equal(ticket[1], { kind: 'booking', text: '*** PRENOTAZIONE ***' }.kind === ticket[1].kind ? ticket[1] : null);
+  assert.equal(ticket[1].text, '*** PRENOTAZIONE ***');
+  assert.equal(ticket[2].kind, 'booking');
+  assert.match(ticket[2].text, /^PER DOM 6 SET ORE 19:30$/);
+});
+
+test('un ordine normale non ha righe di prenotazione', () => {
+  assert.ok(!buildKitchenTicket(ordine).some(row => row.kind === 'booking'));
+});

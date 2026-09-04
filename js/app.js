@@ -1,6 +1,6 @@
 import { calculateCustomizedPrice, DEMO_PAYMENT_METHODS, mergeMenuDefaults, customizationLines } from './domain.js';
 import { DEFAULT_OVEN, ovenThroughput, readyInMinutes } from './oven.js';
-import { resolveBusinessDate, resolveClosure } from './operations.js';
+import { resolveBusinessDate, resolveClosure, nextDailySequence } from './operations.js';
 import { dailyReport, shiftBreakdown } from './reports.js';
 import { calendarPanel, holidayException, openingException } from './views/calendar.js';
 import { historyDates, orderHistoryPanel } from './views/order-history.js';
@@ -19,12 +19,12 @@ import { linesMarkup, printMarkup, ticketsToPrint } from './print/print-queue.js
 import { cashReport, cashReportLines } from './views/cash-report.js';
 import { promisedMinutes } from './messages.js';
 import { allergenNames, allergenSentence } from './allergens.js';
-import { announceOrders, arrivedOrders, unlockChime, alarmActive, stopAlarm } from './notify.js';
+import { announceOrders, arrivedOrders, unlockChime, alarmActive, stopAlarm, showNotification, notificationState, requestNotificationPermission } from './notify.js';
 import { orderSuggestions } from './suggestions.js';
 import { countdownText, waitingProgress, shouldForgetReceipt } from './views/waiting-room.js';
 import { groupCartLines, groupOrderItems, isPlain, plainCartCount } from './cart-lines.js';
 import { openingStatus, zonedMinutes, SERVICE_HOURS } from './opening-hours.js';
-import { bookableSlots, slotTimestamp, slotCapacity, minutesToLabel } from './booking.js';
+import { nextBookingDay, slotCapacity, bookingLabel, romeDate } from './booking.js';
 import { weeklyPizzas, regularPizzas, withDefaultAdditions, autoWeeklyPizza, ingredientCatalog } from './menu-catalog.js';
 import { loginProblem } from './login-errors.js';
 import { statoConnessione } from './connessione.js';
@@ -60,6 +60,11 @@ const stateRefresh=createRepositoryRefreshCoordinator({repository,apply(snapshot
   if(hasRendered)render();
   const avviso=announceOrders(arrivati);
   if(avviso)toast(avviso);
+  // Le prenotazioni escono anche come notifica del dispositivo: chi ha il
+  // Creator aperto in un'altra scheda, o il telefono in tasca, la vede.
+  for(const ordine of arrivati.filter(o=>o.scheduledFor)){
+    showNotification({title:`Nuova prenotazione #${String(ordine.sequence??0).padStart(2,'0')}`,body:`${countPizzas(ordine.items||[])} pizze per ${bookingLabel(ordine.scheduledFor)} · ${ordine.customer||''}`,tag:`booking-${ordine.id}`});
+  }
   if(autoPrint&&arrivati.length)stampaComande(ticketsToPrint(arrivati,printed));
 },onError:reportRepositoryError});
 async function refreshRepositoryState(){try{await stateRefresh.refresh()}catch{}}
@@ -86,37 +91,34 @@ function isPizza(item){const product=state.menu.find(p=>String(p.databaseId??p.i
 function countPizzas(items=[]){return items.filter(isPizza).reduce((n,i)=>n+Number(i.quantity??1),0)}
 // Chi guarda il menu non vede gli ordini altrui: la coda gliela dice il server.
 function pizzasAhead(){return state.pizzasQueued??state.orders.filter(o=>o.status==='preparing'&&o.paymentStatus!=='awaiting'&&isDueNow(o)).reduce((n,o)=>n+countPizzas(o.items),0)}
-function ovenSettings(){return state.services[state.shift]?.oven??DEFAULT_OVEN}
+function ovenSettings(){return state.services[state.shift]?.oven??state.ovenDefaults??DEFAULT_OVEN}
 function waitMinutes(pizzas){return readyInMinutes({ahead:pizzasAhead(),pizzas,...ovenSettings()})}
 function currentClosure(date=resolveBusinessDate(Date.now(),state.activeDay)){const closure=resolveClosure(date,state.calendar.closedWeekdays,state.calendar.exceptions);return {...closure,date,message:closure.message||(closure.closed?'Chiuso per riposo settimanale':'')}}
 // Gli orari fissi (pranzo 12-14:15, sera 19-22:15) decidono da soli: fuori da
 // quelle due finestre non si ordina, anche se il servizio fosse rimasto aperto.
 function hoursStatus(){return openingStatus(Date.now())}
 function orderingOpen(){return Boolean(hoursStatus().open&&state.shift&&state.services[state.shift]?.status==='open'&&state.online&&!currentClosure().closed)}
-// Le prenotazioni sono un secondo interruttore, indipendente da "online": si
-// puo' sospendere l'ordine immediato e tenere aperte solo le prenotazioni (o
-// viceversa). Restano pero' dentro un turno gia' aperto: si prenota un
-// orario dentro il servizio vivo, non a cavallo di un turno chiuso.
-function bookingOpen(){return Boolean(hoursStatus().open&&state.shift&&state.services[state.shift]?.status==='open'&&state.bookingsOpen&&!currentClosure().closed)}
-function currentBookableSlots(now=Date.now()){
-  if(!bookingOpen())return [];
-  const service=state.services[state.shift];
+// Le prenotazioni sono un interruttore unico della pizzeria, indipendente da
+// "online" e dal turno aperto: si prenota per il primo giorno utile (oggi se
+// c'e' ancora un turno con posto, altrimenti il primo giorno dopo riposo o
+// ferie), anche prima che il locale apra quel turno. Uno slot senza piu'
+// posto nel forno non compare nemmeno.
+function currentBookingDay(now=Date.now()){
+  if(!state.bookingsOpen)return null;
   const oven=ovenSettings();
-  // Quante pizze sono gia' prenotate in questo turno, quarto d'ora per
-  // quarto d'ora: uno slot senza piu' posto nel forno non compare nemmeno.
-  const booked={};
-  for(const entry of state.bookedSlots||[]){
-    if(!entry||entry.serviceId!==service?.id||!entry.at)continue;
-    const minuto=zonedMinutes(entry.at);
-    booked[minuto]=(booked[minuto]||0)+Number(entry.pizzas||0);
-  }
-  return bookableSlots({
-    shift:state.shift,hours:SERVICE_HOURS,nowMinutes:zonedMinutes(now),
+  return nextBookingDay({
+    now,hours:SERVICE_HOURS,
+    isClosed:date=>resolveClosure(date,state.calendar.closedWeekdays,state.calendar.exceptions).closed,
     capacity:slotCapacity({ovenSlots:oven.slots,bakeMinutes:oven.bakeMinutes}),
-    booked,
+    booked:state.bookedSlots||[],
     partySize:countPizzas(state.cart.map(i=>({...i,quantity:1})))
   });
 }
+function bookingOpen(){return Boolean(currentBookingDay())}
+function currentBookableSlots(now=Date.now()){return currentBookingDay(now)?.slots??[]}
+// Per quando e' la prenotazione, detto al cliente: "le 19:30" se e' per
+// oggi, "dom 6 set, 19:30" se e' per un altro giorno.
+function bookingWhen(at){const label=bookingLabel(at,{locale:state.locale});return romeDate(at)===romeDate(Date.now())?`${t('booking.at')} ${label}`:label}
 // Un ordine "dovuto adesso": o non e' prenotato, o l'orario prenotato e' gia
 // arrivato. Solo questi contano per la cucina e per la coda del forno; una
 // prenotazione per fra due ore aspetta nella sua scheda finche' non e' ora.
@@ -127,10 +129,11 @@ function closedHoursMessage(){
   const status=hoursStatus();
   if(status.open)return null;
   const tel=appConfig.pizzeriaPhone?`Chiama la pizzeria allo ${appConfig.pizzeriaPhone}`:'Chiama la pizzeria';
+  const number=appConfig.pizzeriaPhone?String(appConfig.pizzeriaPhone).replace(/\s/g,''):null;
   const quando=status.nextShift==='lunch'?`Torna a pranzo dalle ${status.nextOpensAt}.`
     :status.nextShift==='dinner'?`Torna stasera dalle ${status.nextOpensAt}.`
     :'Torna domani a pranzo dalle 12:00.';
-  return {tel,quando};
+  return {tel,quando,number};
 }
 // La comanda esce da sola quando entra l'ordine: se qualcuno deve premere
 // «stampa», in un venerdi' sera non lo premera'. Il browser apre comunque la
@@ -202,7 +205,9 @@ function customer(){
   const settimanaHero=weeklyPizzas(state.menu);
   const heroDish=settimanaHero[0]||autoWeeklyPizza(state.menu,new Date())||regularPizzas(state.menu)[0];
   const heroFoto=heroImage(heroDish);
-  const heroChiuso=closure.closed||!hoursStatus().open;
+  // Chiuso per orario o calendario, ma se si puo' prenotare il menu resta
+  // vivo: la pizza si sceglie adesso e si ritira all'orario prenotato.
+  const heroChiuso=(closure.closed||!hoursStatus().open)&&!bookingOpen();
   return `<section class="menu-hero">
       ${heroFoto?`<div class="menu-hero-media"><img src="${esc(heroFoto)}" alt="" loading="eager" decoding="async"></div>`:''}
       <div class="menu-hero-content">
@@ -210,7 +215,7 @@ function customer(){
         <span class="eyebrow">${t('app.tagline')}</span><h1>${t('app.headline')}</h1><p>${t('app.subtitle')}</p>
         ${heroDish?`<div class="menu-hero-cta"><button class="btn primary add" data-id="${esc(heroDish.id)}" ${heroChiuso?'disabled':''}>${heroChiuso?t('product.closed'):t('hero.cta')}</button><span class="menu-hero-price">${money(heroDish.price)}</span></div>`:''}
       </div>
-      <div class="status ${open?'':'closed-status'}"><b>${open?t('status.open'):t('status.closed')}</b>${closure.closed?`<p class="closure-reason"><strong>${esc(closure.message)}</strong><br>${closure.date}</p>`:closedHours?`<p class="closure-reason"><strong>${esc(closedHours.tel)}</strong><br>${esc(closedHours.quando)}</p>`:`<p>${t('status.wait')}: ${eta}\u2013${eta+5} ${t('status.minutes')}</p>`}</div>
+      <div class="status ${open?'':'closed-status'}"><b>${open?t('status.open'):t('status.closed')}</b>${closure.closed?`<p class="closure-reason"><strong>${esc(closure.message)}</strong><br>${closure.date}</p>`:closedHours?`<p class="closure-reason"><strong>${closedHours.number?`<a href="tel:${esc(closedHours.number)}">${esc(closedHours.tel)}</a>`:esc(closedHours.tel)}</strong><br>${esc(closedHours.quando)}</p>`:`<p>${t('status.wait')}: ${eta}\u2013${eta+5} ${t('status.minutes')}</p>`}</div>
     </section>
     <nav class="menu-nav">
       <button class="btn ${productFilter==='pizza'?'primary':'secondary'}" data-filter="pizza">${t('tabs.pizzas')}</button>
@@ -282,7 +287,7 @@ function dishCard(p,closed,weekly=false){
     </article>`;
 }
 function products(type){
-  const closed=currentClosure().closed||!hoursStatus().open;
+  const closed=(currentClosure().closed||!hoursStatus().open)&&!bookingOpen();
   if(type==='pizza'){
     let settimana=weeklyPizzas(state.menu);
     // Se il locale non ne ha scelta una, ne mettiamo noi una a rotazione
@@ -317,8 +322,8 @@ function confirmBody(){
   const eta=waitMinutes(countPizzas(state.cart.map(i=>({...i,quantity:1}))));
   const metodo=DEMO_PAYMENT_METHODS.find(m=>m.id===confirming.paymentId);
   const proposte=(confirming.suggestions||[]).map(id=>state.menu.find(p=>p.id===id)).filter(Boolean);
-  const prenotata=confirming.scheduledMinute!=null?minutesToLabel(confirming.scheduledMinute):null;
-  return `<div class="modal-head"><div><span class="eyebrow">${t('confirm.title')}</span><h2>${prenotata?`Prenotata per le ${esc(prenotata)}`:`${t('confirm.when')} ${eta} ${t('status.minutes')}`}</h2></div></div>
+  const prenotata=confirming.scheduledAt?bookingWhen(confirming.scheduledAt):null;
+  return `<div class="modal-head"><div><span class="eyebrow">${t('confirm.title')}</span><h2>${prenotata?`${t('booking.confirmed')} ${esc(prenotata)}`:`${t('confirm.when')} ${eta} ${t('status.minutes')}`}</h2></div></div>
     <p class="confirm-sub">${t('confirm.sub')}</p>
     <ul class="confirm-list">${groupCartLines(state.cart).map(riga=>{
       const i=riga.item;
@@ -350,19 +355,23 @@ function confirmBody(){
 function cart(){
   const total=state.cart.reduce((n,i)=>n+i.price,0);
   const nowOk=orderingOpen();
-  const slots=currentBookableSlots();
+  const giorno=currentBookingDay();
+  const slots=giorno?.slots??[];
   const canBook=slots.length>0;
   // Bloccato solo se non si puo' ne' ordinare adesso ne' prenotare: se anche
   // uno solo dei due e' aperto, il carrello resta usabile.
-  const bloccato=(currentClosure().closed||!hoursStatus().open)||(!nowOk&&!canBook);
+  const bloccato=!nowOk&&!canBook;
+  const turni={lunch:t('booking.lunch'),dinner:t('booking.dinner')};
+  const perTurno=Object.keys(turni).map(shift=>[shift,slots.filter(s=>s.shift===shift)]).filter(([,list])=>list.length);
+  const quandoGiorno=giorno?(giorno.today?t('booking.today'):bookingLabel(giorno.slots[0].at,{locale:state.locale}).split(',')[0]):'';
   return `<div class="cart-head"><h2>${t('cart.title')}</h2><button class="btn secondary" id="cart-close">${t('cart.close')}</button></div>${state.cart.map((i,x)=>{const extra=[i.removed?.length?`${t('cart.without')}: ${i.removed.map(name=>localIngredient(name,i.ingredientNames)).join(', ')}`:'',i.additions?.filter(a=>a.quantity).map(a=>`${a.quantity}\u00d7 ${translateProduct(a.names??{it:a.name},state.locale)}`).join(', ')||'',i.note||''].filter(Boolean);return `<div class="cart-line"><div><b>${esc(pname(i))}</b>${extra.map(line=>`<p>${esc(line)}</p>`).join('')}<p class="cart-allergens">${esc(pallergenLine(i))}</p></div><div class="cart-line-side"><span>${money(i.price)}</span><button class="btn secondary" data-remove="${x}">${t('cart.remove')}</button></div></div>`}).join('')||`<p>${t('cart.empty')}</p>`}<h3 class="cart-total">${t('cart.total')} ${money(total)}</h3>${state.cart.length?`
     <div class="field"><label>${t('cart.name')}<input id="name" value="${esc(state.contact?.name||'')}"></label></div>
     <div class="field"><label>${t('cart.phone')}<input id="phone" inputmode="tel" value="${esc(state.contact?.phone||'')}"></label></div>
     <div class="field"><label>${t('cart.email')}<input id="email" type="email" inputmode="email" value="${esc(state.contact?.email||'')}"></label></div>
-    ${canBook?`<div class="field"><span>Quando la vuoi?</span><div class="booking-choice">
-      <label class="booking-option${nowOk?'':' booking-disabled'}"><input type="radio" name="when" value="now" ${nowOk?'':'disabled'} ${nowOk?'checked':''}> Appena pronta</label>
-      <label class="booking-option"><input type="radio" name="when" value="later" ${nowOk?'':'checked'}> Prenotala per le
-        <select id="booking-slot" ${nowOk?'disabled':''}>${slots.map(s=>`<option value="${s.minute}">${s.label}</option>`).join('')}</select>
+    ${canBook?`<div class="field"><span>${t('booking.question')}</span><div class="booking-choice">
+      <label class="booking-option${nowOk?'':' booking-disabled'}"><input type="radio" name="when" value="now" ${nowOk?'':'disabled'} ${nowOk?'checked':''}> ${t('booking.now')}</label>
+      <label class="booking-option"><input type="radio" name="when" value="later" ${nowOk?'':'checked'}> ${t('booking.later')} <b>${esc(quandoGiorno)}</b>
+        <select id="booking-slot" ${nowOk?'disabled':''}>${perTurno.map(([shift,list])=>`<optgroup label="${esc(turni[shift])}">${list.map(s=>`<option value="${s.at}">${s.label}</option>`).join('')}</optgroup>`).join('')}</select>
       </label>
     </div></div>`:''}
     <div class="field"><span>${t('cart.payment')}</span><div class="payment-grid">${DEMO_PAYMENT_METHODS.map((method,index)=>`<label class="payment-option"><input type="radio" name="payment" value="${method.id}" ${(state.contact?.payment??DEMO_PAYMENT_METHODS[0].id)===method.id?'checked':''}> <b>${translatePaymentMethod(method.id,state.locale)}</b></label>`).join('')}</div></div>
@@ -407,7 +416,8 @@ if(adminSection==='bookings'){
   // Chi ha prenotato per dopo: sparisce da qui da sola quando arriva il suo
   // orario e si ritrova negli "Ordini di adesso", pronta per la cucina.
   const inArrivo=prenotazioni();
-  return `<h1>Prenotazioni</h1><div class="actions"><button class="btn secondary" id="toggle-bookings">Prenotazioni: ${state.bookingsOpen?'attive':'sospese'}</button></div><p class="history-count">${inArrivo.length?`${inArrivo.length} in arrivo`:'Nessuna prenotazione in attesa'}</p>${inArrivo.map(orderCard).join('')||'<div class="card"><h2>Nessuna prenotazione</h2><p>Le pizze prenotate per un orario preciso compaiono qui finché non arriva il momento di prepararle.</p></div>'}${detailOrder()?orderDetailPanel(detailOrder(),money):''}`;
+  const notifiche=notificationState();
+  return `<h1>Prenotazioni</h1><div class="actions"><button class="btn secondary" id="toggle-bookings">Prenotazioni: ${state.bookingsOpen?'attive':'sospese'}</button>${notifiche==='default'?'<button class="btn secondary" id="enable-notifications">🔔 Attiva le notifiche</button>':''}</div><p class="history-count">${inArrivo.length?`${inArrivo.length} in arrivo`:'Nessuna prenotazione in attesa'}${notifiche==='denied'?' · notifiche bloccate dal browser: riattivale dalle impostazioni del sito':''}</p><p class="editor-note">Si prenota anche a turno chiuso e per il primo giorno dopo riposo o ferie: ogni prenotazione suona qui, compare come notifica e, con la stampa automatica accesa, esce subito in comanda.</p>${inArrivo.map(orderCard).join('')||'<div class="card"><h2>Nessuna prenotazione</h2><p>Le pizze prenotate per un orario preciso compaiono qui finché non arriva il momento di prepararle.</p></div>'}${detailOrder()?orderDetailPanel(detailOrder(),money):''}`;
 }
 if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||[],money,typeof repository.uploadProductPhoto==='function',menuFilter,menuTab,ingredientList());const day=state.activeDay?.date||historyDates(state.orders)[0]||'';const rows=ordersWithAdjustments();
   return `<h1>Report</h1><p class="history-count">Giornata ${day||'non ancora aperta'}</p>
@@ -431,7 +441,7 @@ function orderCard(o){
   const pronto=o.status==='ready';
   const attesaPago=o.paymentStatus==='awaiting';
   const nuovo=nuovoOrdine(o)&&!attesaPago;
-  const prenotato=o.scheduledFor?new Date(o.scheduledFor).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Rome'}):null;
+  const prenotato=o.scheduledFor?bookingLabel(o.scheduledFor):null;
   const righe=groupOrderItems(o.items||[]);
   const pizze=righe.filter(isPizza);
   const bibite=righe.filter(i=>!isPizza(i));
@@ -439,7 +449,7 @@ function orderCard(o){
   const flags=[];
   if(attesaPago)flags.push('<b class="ordercard-flag pay">In attesa di pagamento</b>');
   else if(pronto)flags.push('<b class="ordercard-flag">Pronto, da consegnare</b>');
-  if(prenotato)flags.push(`<b class="ordercard-flag booking">Prenotato per le ${esc(prenotato)}</b>`);
+  if(prenotato)flags.push(`<b class="ordercard-flag booking">Prenotato per ${romeDate(o.scheduledFor)===romeDate(Date.now())?'le ':''}${esc(prenotato)}</b>`);
   return `<article class="card order ordercard${pronto?' is-ready':''}${nuovo?' is-new':''}${attesaPago?' is-awaiting':''}" data-order="${esc(o.id)}">
     <div class="ordercard-head">
       <span class="ordercard-n">${nuovo?'<i class="dot" aria-label="nuovo"></i>':''}#${String(o.sequence??0).padStart(2,'0')}</span>
@@ -560,11 +570,12 @@ function bind(){
     // "Adesso" o "prenota per dopo": solo uno dei due deve essere davvero
     // possibile in questo momento, non basta che il bottone sia stato scelto.
     const quando=document.querySelector('input[name="when"][value="later"]')?.checked?'later':'now';
-    let slotMinuto=null;
+    let slotScelto=null;
     if(quando==='later'){
-      if(!bookingOpen())return toast('Le prenotazioni non sono attive al momento.');
-      slotMinuto=Number(document.querySelector('#booking-slot')?.value);
-      if(!Number.isFinite(slotMinuto)||!currentBookableSlots().some(s=>s.minute===slotMinuto))return toast('Scegli un orario valido per la prenotazione.');
+      if(!bookingOpen())return toast(t('booking.off'));
+      const at=Number(document.querySelector('#booking-slot')?.value);
+      slotScelto=currentBookableSlots().find(s=>s.at===at)??null;
+      if(!slotScelto)return toast(t('booking.pick'));
     }else if(!orderingOpen()){
       const ch=closedHoursMessage();return toast(currentClosure().closed?currentClosure().message:ch?`${ch.tel} · ${ch.quando}`:'Il servizio online non e aperto.');
     }
@@ -588,7 +599,8 @@ function bind(){
       name:nome,
       phone:normalizePhoneNumber(phone),email,
       paymentId:document.querySelector('input[name="payment"]:checked').value,
-      scheduledMinute:quando==='later'?slotMinuto:null,
+      scheduledAt:slotScelto?.at??null,
+      scheduledShift:slotScelto?.shift??null,
       // Le proposte si scelgono adesso e non cambiano piu': se sparissero
       // appena tocchi il piu', non potresti prenderne quattro.
       suggestions:orderSuggestions(state.cart,state.menu).map(p=>p.id)
@@ -639,21 +651,26 @@ function bind(){
     if(!dati)return;
     const payment=DEMO_PAYMENT_METHODS.find(method=>method.id===dati.paymentId);
     const cartItems=state.cart.map(i=>({...i,quantity:1}));
+    const scheduledFor=dati.scheduledAt??null;
     const service=state.shift?state.services[state.shift]:null;
-    // Se il servizio non risulta aperto sul dispositivo, rileggo dal server e,
-    // se davvero non c'e', lo dico chiaro invece di far partire un ordine cieco.
-    if(!service||service.status!=='open'||!state.activeDay){
+    // Un ordine immediato vuole il servizio aperto: se non risulta tale sul
+    // dispositivo, rileggo dal server e, se davvero non c'e', lo dico chiaro
+    // invece di far partire un ordine cieco. Una prenotazione no: giorno e
+    // turno li decide l'orario scelto, il servizio lo trova (o lo crea) il
+    // server anche se il locale non ha ancora aperto quel turno.
+    if(!scheduledFor&&(!service||service.status!=='open'||!state.activeDay)){
       await refreshRepositoryState();
       const ora=state.shift?state.services[state.shift]:null;
       if(!ora||ora.status!=='open'){return toast('Il servizio non risulta aperto: chiedi in pizzeria di aprirlo, poi riprova.')}
     }
-    const total=state.cart.reduce((n,i)=>n+i.price,0),eta=waitMinutes(countPizzas(cartItems)),businessDate=state.activeDay.date,servizioAttivo=state.services[state.shift],sequence=nextServiceSequence(state.orders,servizioAttivo,state.activeDay),fees=total*payment.feeRate;
-    // Prenotata: pronta all'orario scelto, non appena esce dal forno. Il
-    // resto della pipeline (numero, giornata, servizio) resta lo stesso di un
-    // ordine normale: cambia solo QUANDO deve essere pronta.
     const adesso=Date.now();
-    const scheduledFor=dati.scheduledMinute!=null?slotTimestamp(dati.scheduledMinute,adesso,zonedMinutes(adesso)):null;
-    const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:state.activeDay.id,serviceId:servizioAttivo.id,source:'WEB',customer:dati.name||'Cliente',phone:dati.phone,email:dati.email,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:state.shift,createdAt:adesso,readyAt:scheduledFor??adesso+eta*60000,scheduledFor,total,gross:total,fee:fees,fees,items:cartItems};
+    const total=state.cart.reduce((n,i)=>n+i.price,0),eta=waitMinutes(countPizzas(cartItems)),fees=total*payment.feeRate;
+    const businessDate=scheduledFor?romeDate(scheduledFor):state.activeDay.date;
+    const stessoGiorno=state.activeDay?.date===businessDate;
+    const turno=scheduledFor?dati.scheduledShift:state.shift;
+    const servizio=scheduledFor?(stessoGiorno?state.services[turno]??null:null):state.services[state.shift];
+    const sequence=servizio&&stessoGiorno?nextServiceSequence(state.orders,servizio,state.activeDay):nextDailySequence(state.orders,businessDate);
+    const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:stessoGiorno?state.activeDay?.id??null:null,serviceId:servizio?.id??null,source:'WEB',customer:dati.name||'Cliente',phone:dati.phone,email:dati.email,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:turno,createdAt:adesso,readyAt:scheduledFor??adesso+eta*60000,scheduledFor,total,gross:total,fee:fees,fees,items:cartItems};
     try{
       // Numero pubblico e totale li decide il server: l'anteprima locale
       // servirebbe solo a mostrare un numero che poi cambia.
@@ -690,7 +707,13 @@ function bind(){
         // Qualcun altro ha preso l'ultimo posto in quel quarto d'ora fra la
         // scelta e l'invio: si aggiornano gli orari e si fa scegliere di nuovo.
         await refreshRepositoryState().catch(()=>{});
-        toast('Quell orario si e riempito proprio ora: scegline un altro.');
+        toast(t('booking.full'));
+      }else if(/bookings are not open/i.test(msg)){
+        await refreshRepositoryState().catch(()=>{});
+        toast(t('booking.off'));
+      }else if(/closed on the requested date|business day is closed/i.test(msg)){
+        await refreshRepositoryState().catch(()=>{});
+        toast(t('booking.closedDay'));
       }else if(/service|business day|closed|chiuso|not open|già|gia'/i.test(msg)){
         await refreshRepositoryState().catch(()=>{});
         toast('Il servizio non risulta aperto sul server: fatelo aprire in pizzeria e riprova.');
@@ -780,15 +803,23 @@ function bind(){
   // da sole fra piu' postazioni della pizzeria.
   // Sincronizzato come "Online": passa dal server, cosi' ogni postazione
   // della pizzeria vede lo stesso interruttore, non solo questo dispositivo.
+  // Un interruttore solo per tutta la pizzeria: non serve un servizio
+  // aperto, si accende anche la mattina o il giorno prima delle ferie.
   document.querySelectorAll('#toggle-bookings').forEach(b=>b.onclick=async()=>{
-    const service=state.services[state.shift];
-    if(!service)return toast('Apri prima un servizio.');
     try{
-      await repository.setServiceBookings(service.id,!state.bookingsOpen);
+      const acceso=await repository.setBookingsEnabled(!state.bookingsOpen);
       if(runtime.mode==='supabase')await refreshRepositoryState();
-      else{state.bookingsOpen=!state.bookingsOpen;save();render()}
+      else{state.bookingsOpen=Boolean(acceso);save();render()}
       toast(state.bookingsOpen?'Prenotazioni attive.':'Prenotazioni sospese.');
     }catch{reportRepositoryError()}
+  });
+  // L'avviso sul telefono o sul computer quando entra una prenotazione: il
+  // browser lo permette solo se lo si chiede da un tocco, quindi c'e' un
+  // bottone. Una volta accettato, sparisce.
+  document.querySelector('#enable-notifications')?.addEventListener('click',async()=>{
+    const esito=await requestNotificationPermission();
+    toast(esito==='granted'?'Notifiche attive su questo dispositivo.':'Notifiche non consentite dal browser.');
+    render();
   });
   function readCounterDraft(){
     if(!counterDraft)return null;

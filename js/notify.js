@@ -120,7 +120,46 @@ export function announceOrders(orders = []) {
   if (!orders.length) return null;
   // Non un trillo solo: parte l'allarme che continua finche' non lo fermano.
   startAlarm();
-  return orders.length === 1
-    ? `Nuovo ordine #${String(orders[0].sequence ?? 0).padStart(2, '0')}`
-    : `${orders.length} nuovi ordini`;
+  const numero = order => `#${String(order.sequence ?? 0).padStart(2, '0')}`;
+  const prenotazioni = orders.filter(order => order.scheduledFor);
+  if (orders.length === 1) {
+    return prenotazioni.length ? `Nuova prenotazione ${numero(orders[0])}` : `Nuovo ordine ${numero(orders[0])}`;
+  }
+  if (prenotazioni.length === orders.length) return `${orders.length} nuove prenotazioni`;
+  if (prenotazioni.length) return `${orders.length} nuovi ordini, di cui ${prenotazioni.length} prenotazion${prenotazioni.length === 1 ? 'e' : 'i'}`;
+  return `${orders.length} nuovi ordini`;
+}
+
+// La notifica del dispositivo: esce anche se la scheda e' dietro o il
+// telefono in tasca. Il browser la concede solo se la si chiede da un tocco
+// (requestNotificationPermission), poi basta showNotification.
+function notificationApi(api = globalThis.Notification) {
+  return typeof api === 'function' || (api && typeof api === 'object') ? api : null;
+}
+
+export function notificationState(api) {
+  const N = notificationApi(api);
+  return N ? String(N.permission ?? 'default') : 'unsupported';
+}
+
+export async function requestNotificationPermission(api) {
+  const N = notificationApi(api);
+  if (!N || typeof N.requestPermission !== 'function') return 'unsupported';
+  try {
+    return await N.requestPermission();
+  } catch {
+    return notificationState(N);
+  }
+}
+
+export function showNotification({ title, body = '', tag } = {}, api) {
+  const N = notificationApi(api);
+  if (!N || N.permission !== 'granted' || !title) return false;
+  try {
+    const notifica = new N(title, { body, tag, renotify: true });
+    notifica.onclick = () => { try { globalThis.focus?.(); notifica.close(); } catch { /* niente */ } };
+    return true;
+  } catch {
+    return false;
+  }
 }
