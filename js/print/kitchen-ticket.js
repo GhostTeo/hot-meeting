@@ -8,6 +8,7 @@
 //
 // Ogni riga e' { kind, text } dove kind vale:
 //   number     il progressivo del giorno, da stampare grande
+//   booking    e' una prenotazione: per quando, in evidenza
 //   meta       provenienza, cliente, orari
 //   separator  una riga di stacco
 //   item       il piatto, con quantita'
@@ -31,11 +32,29 @@ function orderNumber(order) {
   return order.sequence ? `#${String(order.sequence).padStart(2, '0')}` : `#${order.id ?? ''}`;
 }
 
+// Per quando e' la prenotazione, sempre col giorno: sulla carta non c'e' un
+// "oggi" implicito, e una comanda stampata la sera prima deve dire da sola
+// che e' per domani. Ora di Roma, non del dispositivo che stampa.
+function bookingMoment(value) {
+  const quando = new Date(Number(value));
+  const giorno = quando.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Rome' });
+  const ora = quando.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+  return `${giorno} ORE ${ora}`.toUpperCase();
+}
+
 // Le bibite stanno sulla comanda, perche' chi consegna deve sapere cosa mettere
 // nel sacchetto, ma in fondo e staccate: chi impasta non deve cercare la pizza
 // in mezzo alle lattine.
 export function buildKitchenTicket(order = {}, { isDrink = () => false } = {}) {
   const rows = [{ kind: 'number', text: orderNumber(order) }];
+
+  // Una prenotazione si vede al primo sguardo: grande, subito sotto il
+  // numero, con giorno e ora. Chi impasta non deve leggere fino in fondo per
+  // scoprire che quella pizza non va fatta adesso.
+  if (order.scheduledFor) {
+    rows.push({ kind: 'booking', text: '*** PRENOTAZIONE ***' });
+    rows.push({ kind: 'booking', text: `PER ${bookingMoment(order.scheduledFor)}` });
+  }
 
   const chi = [String(order.source ?? '').toUpperCase(), order.customer].filter(Boolean).join(' · ');
   if (chi) rows.push({ kind: 'meta', text: chi });

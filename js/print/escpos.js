@@ -69,6 +69,7 @@ function aCapo(testo, larghezza) {
 // piccoli ma presenti.
 const STILI = {
   number: { prima: [...COMANDI.centro, ...COMANDI.grande], dopo: [...COMANDI.normale, ...COMANDI.sinistra], righe: 1 },
+  booking: { prima: [...COMANDI.centro, ...COMANDI.altoLargo, ...COMANDI.grassettoSi], dopo: [...COMANDI.grassettoNo, ...COMANDI.normale, ...COMANDI.sinistra], righe: 0 },
   meta: { prima: [], dopo: [], righe: 0 },
   section: { prima: [...COMANDI.grassettoSi], dopo: [...COMANDI.grassettoNo], righe: 0 },
   item: { prima: [...COMANDI.altoLargo, ...COMANDI.grassettoSi], dopo: [...COMANDI.grassettoNo, ...COMANDI.normale], righe: 0 },

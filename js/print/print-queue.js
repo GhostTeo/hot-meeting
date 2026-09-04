@@ -26,7 +26,7 @@ function escapeHtml(value = '') {
 function riga(row) {
   if (row.kind === 'separator') return `<div>${'-'.repeat(42)}</div>`;
   if (row.kind === 'section') return `<div class="ticket-section">${escapeHtml(row.text)}</div>`;
-  const classe = row.kind === 'number' ? ' class="ticket-number"' : row.alert ? ' class="ticket-alert"' : '';
+  const classe = row.kind === 'number' ? ' class="ticket-number"' : row.kind === 'booking' ? ' class="ticket-booking"' : row.alert ? ' class="ticket-alert"' : '';
   return `<div${classe}>${escapeHtml(row.text)}</div>`;
 }
 

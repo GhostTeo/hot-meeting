@@ -1240,6 +1240,7 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 
   #print-area .ticket-number { font-size: 34px; font-weight: 800; margin-bottom: 4px }
   #print-area .ticket-alert { font-weight: 800; text-decoration: underline }
+  #print-area .ticket-booking { font-size: 22px; font-weight: 800; text-align: center; border: 3px solid #000; padding: 4px 6px; margin: 4px 0 }
   #print-area .ticket-section { margin: 10px 0 4px; font-weight: 800; border-top: 1px dashed #000; padding-top: 6px }
   /* Due ordini insieme sono due comande, non un foglio solo. */
   #print-area .ticket-page { break-after: page; page-break-after: always }
@@ -1302,3 +1303,25 @@ main { max-width: 1120px; margin: auto; padding: 26px 5vw 140px }
 .ingredient-price { display: flex; align-items: center; gap: 6px; font-size: .9rem; color: var(--ink-soft); }
 .ingredient-price-input { width: 90px; }
 .ingredient-note { margin: 8px 0 0; color: var(--accent-dark); font-weight: 600; font-size: .88rem; }
+
+/* ---------- Note legali in fondo a tutto ---------- */
+
+.legal {
+  border-top: 1px solid var(--line);
+  padding: 22px 5vw 34px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.legal-row { display: flex; flex-wrap: wrap; gap: 18px 40px; margin-bottom: 12px }
+.legal-row b { color: var(--ink) }
+.legal a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px }
+.legal-links { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 6px 0 10px }
+.legal-fine { margin: 0; max-width: 90ch }
+
+.legal-page { max-width: 80ch; margin: 0 auto; padding: 24px 5vw 60px; line-height: 1.65 }
+.legal-page h1 { font-size: 30px; margin: 0 0 6px }
+.legal-page h2 { font-size: 20px; margin: 34px 0 8px; scroll-margin-top: 20px }
+.legal-page p, .legal-page li { font-size: 15px }
+.legal-page .placeholder { background: #fff2c2; padding: 0 4px; border-radius: 4px }

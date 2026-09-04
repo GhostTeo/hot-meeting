@@ -112,9 +112,6 @@ function mapService(row) {
     shift: row.shift,
     status: row.status,
     online: row.online_orders_enabled,
-    // Le prenotazioni sono un secondo interruttore, sincronizzato allo stesso
-    // modo di "online": arriva dal server, non da uno stato solo del browser.
-    bookingsOpen: row.bookings_enabled ?? false,
     capacity: row.capacity_pizzas_hour ?? 90,
     // Il forno: quante pizze insieme, quanto dura un'infornata, quanto margine
     // si tiene oltre la cottura. Da qui esce l'attesa promessa al cliente.
@@ -137,7 +134,6 @@ function mapServiceReceipt(row) {
     shift: row.shift,
     status: row.status,
     online_orders_enabled: row.online_orders_enabled,
-    bookings_enabled: row.bookings_enabled,
     capacity_pizzas_hour: row.capacity_pizzas_hour,
     oven_slots: row.oven_slots,
     bake_minutes: row.bake_minutes,
@@ -279,8 +275,20 @@ function compareDescending(left, right, key) {
   return String(right[key] ?? '').localeCompare(String(left[key] ?? ''));
 }
 
-function selectOperationalDay(rows) {
-  const sorted = [...rows].sort((left, right) => compareDescending(left, right, 'business_date'));
+function romeToday(now = Date.now()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date(now));
+  const value = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+// Una prenotazione per domani fa nascere la giornata di domani in anticipo:
+// non deve diventare "oggi" per la cassa finche' non arriva davvero.
+function selectOperationalDay(rows, today = romeToday()) {
+  const sorted = [...rows]
+    .filter(day => String(day.business_date) <= today)
+    .sort((left, right) => compareDescending(left, right, 'business_date'));
   return sorted.find(day => day.status === 'open')
     ?? sorted.find(day => day.status === 'closed')
     ?? null;
@@ -380,7 +388,9 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
         .sort((left, right) => (right.openedAt ?? 0) - (left.openedAt ?? 0));
       const serviceById = new Map(mappedServices.map(service => [service.id, service]));
       const day = selectOperationalDay(dayRows);
+      const oggi = romeToday();
       const publicDate = [...publicServices]
+        .filter(row => String(row.business_date) <= oggi)
         .sort((left, right) => compareDescending(left, right, 'business_date'))[0]?.business_date;
       const activeDay = day
         ? { id: day.id, date: day.business_date, status: day.status }
@@ -416,7 +426,7 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
           : 0,
         shift: activeService?.shift ?? null,
         online: activeService?.online ?? false,
-        bookingsOpen: activeService?.bookingsOpen ?? false,
+        bookingsOpen: Boolean(settings?.bookings_enabled),
         // Quante pizze sono gia' prenotate, quarto d'ora per quarto d'ora:
         // nessun nome, nessun ordine, solo il numero. Il menu lo usa per
         // nascondere da solo gli orari gia' pieni.
@@ -520,12 +530,13 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
       return mapServiceReceipt(throwIfError(result));
     },
 
-    async setServiceBookings(serviceId, enabled) {
-      const result = await client.rpc('set_service_bookings', {
-        p_service_id: serviceId,
-        p_enabled: enabled
-      });
-      return mapServiceReceipt(throwIfError(result));
+    // Un interruttore solo per tutta la pizzeria, non uno per turno: vive
+    // nelle impostazioni, cosi' si accende anche a locale chiuso e ogni
+    // postazione vede lo stesso stato.
+    async setBookingsEnabled(enabled) {
+      const result = await client.rpc('set_bookings_enabled', { p_enabled: Boolean(enabled) });
+      const row = throwIfError(result);
+      return Boolean(row?.bookings_enabled);
     },
 
     async createOrder(order) {
