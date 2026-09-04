@@ -57,7 +57,12 @@ const stateRefresh=createRepositoryRefreshCoordinator({repository,apply(snapshot
   const arrivati=state.creator?arrivedOrders(ordersSeen,snapshot.orders??[]):[];
   ordersSeen=(snapshot.orders??[]).map(o=>({id:o.id,sequence:o.sequence,status:o.status}));
   state=applyRepositorySnapshot(state,snapshot);save();
-  if(hasRendered)render();
+  // Mentre il cliente sta componendo la pizza, un aggiornamento arrivato dal
+  // server (un altro ordine, il forno, l'interruttore) NON ridisegna la
+  // pagina: la finestra tornerebbe in cima e la nota scritta sparirebbe. Si
+  // ridisegna appena la finestra si chiude (chiudi o aggiungi la ridisegnano
+  // comunque).
+  if(hasRendered&&!(customizing&&state.view==='customer'))render();
   const avviso=announceOrders(arrivati);
   if(avviso)toast(avviso);
   // Le prenotazioni escono anche come notifica del dispositivo: chi ha il
@@ -82,6 +87,13 @@ function money(v){return new Intl.NumberFormat('it-IT',{style:'currency',currenc
 // fanno salire: si vede da dove si parte e a quanto si e' arrivati, non solo
 // il totale finale.
 function pricePath(base,current){return current>base?`${money(base)} → ${money(current)}`:money(base)}
+// Il prezzo vivo nella finestra di personalizzazione: grande quello attuale,
+// piccolo quello di partenza e quanto si e' aggiunto. Deve vedersi da
+// lontano: un cliente che dice "non si vedeva" e' un conto contestato.
+function livePriceMarkup(base,current){
+  const extra=Math.max(0,current-base);
+  return `<span class="custom-price-now">${money(current)}</span>${extra>0?`<span class="custom-price-from">${t('custom.from')} ${money(base)} · <b>+${money(extra)}</b></span>`:`<span class="custom-price-from">${t('custom.base')}</span>`}`;
+}
 // Un colpetto sul telefono a ogni scelta: si capisce che ha registrato senza
 // dover guardare. Dove non c'e' il motorino, non succede niente.
 function haptic(){try{navigator.vibrate?.(8)}catch{}}
@@ -189,7 +201,17 @@ function spiaConnessione(){
   </div>`;
 }
 function esc(value=''){return String(value).replace(/[&<>'"]/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'})[character])}
-function render(){document.documentElement.lang=state.locale;releaseDialogTrap?.();releaseDialogTrap=null;document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;pendingDialog=null;save();render()});const side=document.querySelector('#topbar-side');if(side)side.innerHTML=state.view==='customer'?langSwitch():'';document.querySelector('#app').innerHTML=(state.view==='customer'?customer():state.view==='creator'?creator():kitchen())+dialogMarkup(pendingDialog,money)+alarmBanner();bind()}
+function render(){document.documentElement.lang=state.locale;releaseDialogTrap?.();releaseDialogTrap=null;document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{state.view=b.dataset.view;pendingDialog=null;save();render()});const side=document.querySelector('#topbar-side');if(side)side.innerHTML=state.view==='customer'?langSwitch():'';
+  // Lo scorrimento non si tocca mai: si ricorda dov'era la pagina e la
+  // finestra aperta (personalizzazione, conferma) e si rimettono li' dopo
+  // aver riscritto il contenuto. Riscrivere l'HTML, da solo, riporta in cima.
+  const paginaY=window.scrollY,paginaX=window.scrollX;
+  const finestraPrima=document.querySelector('#app .modal');
+  const finestraScroll=finestraPrima?finestraPrima.scrollTop:null;
+  document.querySelector('#app').innerHTML=(state.view==='customer'?customer():state.view==='creator'?creator():kitchen())+dialogMarkup(pendingDialog,money)+alarmBanner();bind();
+  if(finestraScroll!=null){const finestraDopo=document.querySelector('#app .modal');if(finestraDopo)finestraDopo.scrollTop=finestraScroll}
+  if(window.scrollY!==paginaY||window.scrollX!==paginaX)window.scrollTo(paginaX,paginaY);
+}
 // La fascia grande che resta finche' non la tocchi: l'allarme suona e vibra
 // finche' qualcuno non conferma di aver visto l'ordine.
 function alarmBanner(){if(!alarmActive())return '';return `<button class="alarm-banner" id="alarm-stop"><span class="alarm-banner-dot"></span><span class="alarm-banner-text"><b>Nuovo ordine!</b>Tocca per fermare l'avviso</span></button>`}
@@ -379,7 +401,7 @@ function cart(){
 }
 
 
-function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2><b class="custom-price-live" id="custom-price-live">${pricePath(p.price,price)}</b></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}" data-row="ing-${index}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.length>4?`<div class="field add-search-field"><input id="addition-search" type="search" placeholder="Cerca un'aggiunta\u2026" autocomplete="off"></div>`:''}<div id="addition-list">${customizing.additions.map((addition,index)=>`<div class="option-row${addition.quantity?' picked':''}" data-row="add-${index}" data-name="${esc(String(translateProduct(addition.names??{it:addition.name},state.locale)).toLowerCase())}"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}" ${addition.quantity?'':'disabled'}>\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}</div><div class="allergens"><b>${esc(pallergenLine(p))}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
+function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2><b class="custom-price-live" id="custom-price-live">${livePriceMarkup(p.price,price)}</b></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}" data-row="ing-${index}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.length>4?`<div class="field add-search-field"><input id="addition-search" type="search" placeholder="Cerca un'aggiunta\u2026" autocomplete="off"></div>`:''}<div id="addition-list">${customizing.additions.map((addition,index)=>`<div class="option-row${addition.quantity?' picked':''}" data-row="add-${index}" data-name="${esc(String(translateProduct(addition.names??{it:addition.name},state.locale)).toLowerCase())}"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}" ${addition.quantity?'':'disabled'}>\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}</div><div class="allergens"><b>${esc(pallergenLine(p))}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
 
 // Cucina e Creator sono la stessa area riservata: le comande contengono nome e
 // telefono di chi ordina, non stanno dietro un semplice cambio di scheda.
@@ -505,7 +527,11 @@ function bind(){
     const cta=document.querySelector('#custom-add');
     if(cta)cta.textContent=`${t('custom.add')} \u00b7 ${money(price)}`;
     const live=document.querySelector('#custom-price-live');
-    if(live)live.textContent=pricePath(customizing.product.price,price);
+    if(live){
+      live.innerHTML=livePriceMarkup(customizing.product.price,price);
+      // Un colpo d'occhio a ogni cambio: il prezzo "salta" per farsi notare.
+      live.classList.remove('bump');void live.offsetWidth;live.classList.add('bump');
+    }
   }
   document.querySelectorAll('.ingredient-toggle').forEach(b=>b.onclick=()=>{
     const index=Number(b.dataset.index);
