@@ -47,6 +47,8 @@ let state=load();
 if(shouldForgetReceipt({receipt:state.receipt,receiptDone:state.receiptDone,now:Date.now()})){state.receipt=null;state.receiptDone=false;save()}
 const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='orders'; let customizing=null; let confirming=null; let pendingName=null; let askedName=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let ultimoContatto=null; let orderProgress=null; let progressTimer=null; let printed=new Set(); let incomeDetail=undefined; let menuFilter=''; let menuTab='pizza';
 let seenOrders=new Set(JSON.parse(localStorage.getItem('hm-seen-orders')||'[]')); let autoPrint=localStorage.getItem('hm-autoprint')==='1';
+// Dove eri in ogni scheda del menu (pizze, bibite): si ricorda per tornarci.
+const scrollPerScheda={};
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
@@ -357,7 +359,7 @@ function confirmBody(){
     ${proposte.length?`<div class="upsell"><span class="upsell-title">${t('confirm.add')}</span><div class="upsell-row">${proposte.map(p=>{
       const quante=plainCartCount(state.cart,p.id);
       return `<div class="upsell-card${quante?' picked':''}">
-        ${p.imageUrl?`<img src="${esc(p.imageUrl)}" alt="" loading="lazy" decoding="async">`:'<span class="upsell-empty"></span>'}
+        <img src="${esc(dishImage(p))}" alt="" loading="lazy" decoding="async">
         <b>${esc(pname(p))}</b><span>${money(p.price)}</span>
         <div class="upsell-step"><button class="btn secondary" data-suggest-minus="${esc(p.id)}" ${quante?'':'disabled'}>\u2212</button><b>${quante}</b><button class="btn secondary" data-suggest="${esc(p.id)}">+</button></div>
       </div>`;
@@ -507,10 +509,16 @@ function bind(){
   // Cambiare scheda riscrive solo l'elenco: la testata e le foto gia' caricate
   // restano dove sono.
   document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{
+    if(b.dataset.filter===productFilter)return;
+    // Ogni scheda ricorda dov'eri: si torna dalle bibite alle pizze e si
+    // riparte dalla stessa pizza, non dall'inizio dell'elenco.
+    scrollPerScheda[productFilter]=window.scrollY;
     productFilter=b.dataset.filter;
     const elenco=document.querySelector('#products');
     if(!elenco)return render();
     elenco.innerHTML=products(productFilter);
+    const ricordata=scrollPerScheda[productFilter];
+    window.scrollTo({top:ricordata??Math.min(window.scrollY,elenco.offsetTop-90),left:0,behavior:'instant'});
     document.querySelectorAll('[data-filter]').forEach(x=>{
       const attiva=x.dataset.filter===productFilter;
       x.classList.toggle('primary',attiva);
