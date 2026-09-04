@@ -43,7 +43,7 @@ test('la somma delle righe combacia con il totale: non si incassa piu ne meno', 
 
 test('solo il pagamento riuscito segna l ordine pagato', () => {
   assert.deepEqual(esitoWebhook({ type: 'checkout.session.completed', data: { object: { payment_status: 'paid', metadata: { order_id: 'ord-1' } } } }),
-    { azione: 'segna-pagato', orderId: 'ord-1' });
+    { azione: 'segna-pagato', orderId: 'ord-1', importo: 0 });
   assert.deepEqual(esitoWebhook({ type: 'checkout.session.completed', data: { object: { payment_status: 'unpaid', metadata: { order_id: 'ord-1' } } } }),
     { azione: 'ignora' });
   assert.deepEqual(esitoWebhook({ type: 'payment_intent.created', data: { object: {} } }),
@@ -54,4 +54,29 @@ test('senza chiave, Stripe e spento e l app lo sa', () => {
   assert.equal(stripeConfigurato({ STRIPE_SECRET_KEY: 'sk_test_123', STRIPE_WEBHOOK_SECRET: 'whsec_1' }), true);
   assert.equal(stripeConfigurato({ STRIPE_SECRET_KEY: '' }), false);
   assert.equal(stripeConfigurato({}), false);
+});
+
+import { righeCorrenti, totaleRighe, importoCorrisponde } from '../supabase/functions/_shared/stripe-logic.js';
+
+test('si incassa solo l ultima revisione: un ordine corretto non si paga due volte', () => {
+  const righe = [
+    { revision: 1, product_name_snapshot: 'Margherita', quantity: 1, total_price_cents: 800 },
+    { revision: 1, product_name_snapshot: 'Cola', quantity: 1, total_price_cents: 300 },
+    { revision: 2, product_name_snapshot: 'Margherita', quantity: 2, total_price_cents: 1600 }
+  ];
+  assert.deepEqual(righeCorrenti(righe).map(r => r.product_name_snapshot), ['Margherita']);
+  assert.equal(totaleRighe(righe), 1600);
+  assert.deepEqual(righeStripe({ items: righe }).map(r => r.quantity), [2]);
+});
+
+test('righe senza revisione valgono come prima revisione', () => {
+  const righe = [{ quantity: 1, total_price_cents: 800 }, { quantity: 1, total_price_cents: 300 }];
+  assert.equal(totaleRighe(righe), 1100);
+});
+
+test('l importo incassato deve essere esattamente il totale', () => {
+  assert.equal(importoCorrisponde(1600, 1600), true);
+  assert.equal(importoCorrisponde(1100, 1600), false);
+  assert.equal(importoCorrisponde(0, 0), false);
+  assert.equal(esitoWebhook({ type: 'checkout.session.completed', data: { object: { payment_status: 'paid', amount_total: 1600, metadata: { order_id: 'o1' } } } }).importo, 1600);
 });

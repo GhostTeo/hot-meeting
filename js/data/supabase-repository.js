@@ -303,7 +303,9 @@ function orderedQuery(client, table, columns, orderBy, ascending = true) {
   return client.from(table).select(columns).order(orderBy, { ascending });
 }
 
-export function createSupabaseRepository({ client, cache, accessMode = 'creator' } = {}) {
+// placeOrder: se c'e', un ordine web passa da li' (la Edge Function con captcha
+// e limiti per indirizzo) invece che dalla chiamata diretta al database.
+export function createSupabaseRepository({ client, cache, accessMode = 'creator', placeOrder = null } = {}) {
   if (!client) throw new TypeError('Un client Supabase pubblico è obbligatorio');
 
   return {
@@ -541,11 +543,11 @@ export function createSupabaseRepository({ client, cache, accessMode = 'creator'
 
     async createOrder(order) {
       const publicOrder = String(order.source ?? 'WEB').toUpperCase() === 'WEB';
-      const result = await client.rpc(
-        publicOrder ? 'create_public_order' : 'create_restaurant_order',
-        { payload: orderPayload(order, publicOrder) }
-      );
-      const receipt = mapReceipt(throwIfError(result));
+      const payload = orderPayload(order, publicOrder);
+      const data = publicOrder && typeof placeOrder === 'function'
+        ? await placeOrder(payload, order)
+        : throwIfError(await client.rpc(publicOrder ? 'create_public_order' : 'create_restaurant_order', { payload }));
+      const receipt = mapReceipt(data);
       if (publicOrder && receipt.id) {
         // L'orario promesso lo decide il forno, non il browser: si rilegge dal
         // server col gettone dell'ordine, altrimenti la ricevuta direbbe

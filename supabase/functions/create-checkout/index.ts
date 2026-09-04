@@ -9,7 +9,7 @@
 
 import Stripe from 'https://esm.sh/stripe@16?target=deno';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { checkoutAmount, righeStripe, stripeConfigurato } from '../_shared/stripe-logic.js';
+import { checkoutAmount, righeStripe, righeCorrenti, totaleRighe, stripeConfigurato } from '../_shared/stripe-logic.js';
 
 const env = Deno.env.toObject();
 
@@ -19,44 +19,57 @@ const cors = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS'
 };
 
+function risposta(corpo: unknown, status = 200) {
+  return new Response(JSON.stringify(corpo), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
-  // Finche' non ci sono le chiavi, si risponde onestamente invece di fingere.
-  if (!stripeConfigurato(env)) {
-    return new Response(JSON.stringify({ error: 'Pagamento online non ancora attivo.' }), {
-      status: 503, headers: { ...cors, 'Content-Type': 'application/json' }
-    });
+  // Finche' non ci sono le chiavi (e l'indirizzo del sito, che serve per
+  // tornare indietro dopo il pagamento), si risponde onestamente invece di fingere.
+  if (!stripeConfigurato(env) || !env.SITE_ORIGIN) {
+    return risposta({ error: 'Pagamento online non ancora attivo.' }, 503);
   }
 
   try {
     const { order_id, request_token } = await req.json();
+    if (typeof order_id !== 'string' || typeof request_token !== 'string') {
+      return risposta({ error: 'Ordine non trovato.' }, 404);
+    }
     const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
     // Si rilegge l'ordine dal database, e solo con il suo gettone: e' la prova
     // di essere chi l'ha appena fatto. Il totale e' quello che ha deciso il
-    // server, non quello che dice il browser.
+    // server, non quello che dice il browser: la somma delle righe dell'ULTIMA
+    // revisione (un ordine corretto dal locale non si paga due volte).
     const { data: ordine } = await admin
       .from('orders')
-      .select('id, sequence, total_cents, payment_status, order_items(product_name_snapshot, quantity, total_price_cents)')
+      .select('id, sequence, payment_status, stripe_session_id, order_items(revision, product_name_snapshot, quantity, total_price_cents)')
       .eq('id', order_id)
       .eq('client_request_token', request_token)
       .single();
 
-    if (!ordine) {
-      return new Response(JSON.stringify({ error: 'Ordine non trovato.' }), {
-        status: 404, headers: { ...cors, 'Content-Type': 'application/json' }
-      });
-    }
-    if (ordine.payment_status === 'paid') {
-      return new Response(JSON.stringify({ error: 'Ordine gia pagato.' }), {
-        status: 409, headers: { ...cors, 'Content-Type': 'application/json' }
-      });
-    }
+    if (!ordine) return risposta({ error: 'Ordine non trovato.' }, 404);
+    if (ordine.payment_status === 'paid') return risposta({ error: 'Ordine gia pagato.' }, 409);
+
+    const righe = righeCorrenti(ordine.order_items ?? []);
+    const dati = { id: ordine.id, items: righe, total_cents: totaleRighe(righe) };
+    checkoutAmount(dati); // rifiuta un ordine senza totale prima di aprire nulla
 
     const stripe = new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
-    const dati = { ...ordine, items: ordine.order_items };
-    checkoutAmount(dati); // rifiuta un ordine senza totale prima di aprire nulla
+
+    // Una sessione sola per volta: se il cliente aveva gia' aperto il
+    // pagamento e non l'ha concluso, quella vecchia si chiude, cosi' non puo'
+    // pagare su una scheda che il database non collega piu' all'ordine.
+    if (ordine.stripe_session_id) {
+      try {
+        const precedente = await stripe.checkout.sessions.retrieve(ordine.stripe_session_id);
+        if (precedente?.status === 'open') await stripe.checkout.sessions.expire(ordine.stripe_session_id);
+      } catch {
+        // Una sessione vecchia che non si trova piu' non blocca quella nuova.
+      }
+    }
 
     const sessione = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -66,14 +79,16 @@ Deno.serve(async (req) => {
       cancel_url: `${env.SITE_ORIGIN}/?annullato=${ordine.id}`
     });
 
-    await admin.rpc('attach_checkout_session', { p_order_id: ordine.id, p_session_id: sessione.id });
+    const { error } = await admin.rpc('attach_checkout_session', { p_order_id: ordine.id, p_session_id: sessione.id });
+    if (error) {
+      try { await stripe.checkout.sessions.expire(sessione.id); } catch { /* si e' gia' chiusa */ }
+      return risposta({ error: 'Pagamento non avviato.' }, 500);
+    }
 
-    return new Response(JSON.stringify({ url: sessione.url }), {
-      headers: { ...cors, 'Content-Type': 'application/json' }
-    });
+    return risposta({ url: sessione.url });
   } catch (errore) {
-    return new Response(JSON.stringify({ error: String(errore?.message ?? errore) }), {
-      status: 500, headers: { ...cors, 'Content-Type': 'application/json' }
-    });
+    // Il motivo vero resta nei log della funzione: al browser una frase sola.
+    console.error('create-checkout', errore);
+    return risposta({ error: 'Pagamento non avviato.' }, 500);
   }
 });

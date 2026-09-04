@@ -67,9 +67,13 @@ Servono l'accesso a Supabase e la sua riga di comando (`supabase login`).
 2. **Pubblicare le due funzioni:**
 
    ```bash
-   supabase functions deploy create-checkout
-   supabase functions deploy stripe-webhook
+   supabase functions deploy create-checkout --no-verify-jwt
+   supabase functions deploy stripe-webhook --no-verify-jwt
    ```
+
+   `--no-verify-jwt` e' necessario: Stripe (e il cliente che paga, che non e'
+   loggato) non hanno un gettone Supabase. La prova di identita' e' la firma
+   del webhook da una parte, l'id dell'ordine col suo gettone dall'altra.
 
 3. **Registrare il webhook su Stripe**: Developers → Webhooks → Add endpoint,
    l'indirizzo e' quello della funzione `stripe-webhook` che Supabase ti da'

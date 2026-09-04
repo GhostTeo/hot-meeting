@@ -41,7 +41,9 @@ where email = 'EMAIL-DEL-LOCALE';
 
 Solo un utente con `role: creator` puo' aprire servizi, vedere ordini, toccare il
 menu o gli incassi. Chi si registrasse per conto suo vedrebbe soltanto il menu
-pubblico, esattamente come uno sconosciuto.
+pubblico, esattamente come uno sconosciuto. Meglio comunque che nessuno possa
+registrarsi: in Authentication → Providers → Email spegnere *Enable email
+signups* (vedi `docs/sicurezza.md`).
 
 ## 3. Collegare l'app al database
 
@@ -55,7 +57,7 @@ In `js/config.js` vanno due valori, tutti e due pubblici per progetto:
 ```js
 export const appConfig = {
   mode: 'supabase',
-  pizzeriaPhone: '3467095833',
+  pizzeriaPhone: '0200000000',
   supabaseUrl: 'https://LAVOSTRA.supabase.co',
   supabaseAnonKey: 'sb_publishable_...'
 };

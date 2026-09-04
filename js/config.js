@@ -16,5 +16,12 @@ export const appConfig = globalThis.HOT_MEETING_CONFIG ?? {
   // vuoto, il pagamento online e' spento e si paga in cassa: si accende
   // incollando qui l'indirizzo della funzione, dopo aver messo le chiavi di
   // Stripe fra i segreti su Supabase (vedi docs/pagamenti-stripe.md).
-  stripeEndpoint: ''
+  stripeEndpoint: '',
+  // La porta blindata per gli ordini (vedi docs/sicurezza.md): l'indirizzo
+  // della Edge Function «place-order» e la chiave PUBBLICA del sito di
+  // Cloudflare Turnstile. Finche' restano vuoti, l'ordine va dritto al
+  // database come sempre; con tutti e due, passa dal captcha e dai limiti per
+  // indirizzo.
+  orderEndpoint: '',
+  turnstileSiteKey: ''
 };

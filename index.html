@@ -12,7 +12,7 @@
        roba: se qualcuno riuscisse a infilare uno script nella pagina, non
        partirebbe comunque. La seconda evita di raccontare in giro da quale
        pagina arriva chi clicca. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://nzoqtfbvyhemclwmwyah.supabase.co wss://nzoqtfbvyhemclwmwyah.supabase.co; base-uri 'self'; form-action 'none'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2 https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://nzoqtfbvyhemclwmwyah.supabase.co wss://nzoqtfbvyhemclwmwyah.supabase.co https://challenges.cloudflare.com; base-uri 'self'; form-action 'none'; object-src 'none'">
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <!-- Si apre la strada verso i tre indirizzi che servono subito: cosi' dati e
        foto partono senza aspettare la stretta di mano. -->
@@ -23,8 +23,8 @@
   <!-- Un solo carattere da scaricare: per il testo si usa quello di sistema, che
        su iPhone e Android e' gia' li' e non pesa niente. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&display=swap">
-  <link rel="stylesheet" href="styles.css?v=20260904-2">
-  <link rel="stylesheet" href="customization.css?v=20260904-2">
+  <link rel="stylesheet" href="styles.css?v=20260904-3">
+  <link rel="stylesheet" href="customization.css?v=20260904-3">
 </head>
 <body>
   <header class="topbar">
@@ -33,7 +33,7 @@
   </header>
   <main id="app" aria-live="polite"></main>
   <footer class="staff">
-    <small>Ristorante Hot Meeting · Milano · versione <b id="build-tag">2026-09-04·2</b></small>
+    <small>Ristorante Hot Meeting · Milano · versione <b id="build-tag">2026-09-04·3</b></small>
     <button data-view="customer">Menu</button>
     <button data-view="creator">Creator</button>
     <button data-view="kitchen">Cucina</button>
@@ -62,6 +62,6 @@
   <div id="toast" role="status"></div>
   <div id="print-area" aria-hidden="true"></div>
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script type="module" src="js/app.js?v=20260904-2"></script>
+  <script type="module" src="js/app.js?v=20260904-3"></script>
 </body>
 </html>

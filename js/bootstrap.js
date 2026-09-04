@@ -1,4 +1,5 @@
 import { createRepository } from './data/repository.js';
+import { ordineProtetto } from './ordine-protetto.js';
 
 function decodeJwtPayload(key) {
   const parts = key.split('.');
@@ -117,7 +118,8 @@ export async function bootstrapDataLayer({ config, supabase, storage, initialSta
     mode: 'supabase',
     repository: createRepository({
       client, storage, initialState,
-      accessMode: () => isCreatorSession(currentSession) ? 'creator' : 'anon'
+      accessMode: () => isCreatorSession(currentSession) ? 'creator' : 'anon',
+      placeOrder: ordineProtetto(config)
     }),
     auth,
     session: currentSession

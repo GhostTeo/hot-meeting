@@ -29,6 +29,7 @@ import { weeklyPizzas, regularPizzas, withDefaultAdditions, autoWeeklyPizza, ing
 import { loginProblem } from './login-errors.js';
 import { statoConnessione } from './connessione.js';
 import { pagaOnline, urlCheckout } from './pagamento-online.js';
+import { captchaAttivo } from './ordine-protetto.js';
 import { nameCheck, normalizePhoneNumber, phoneProblem } from './customer-identity.js';
 import { kitchenPanel } from './views/kitchen.js';
 import { appConfig } from './config.js';
@@ -47,6 +48,20 @@ let state=load();
 if(shouldForgetReceipt({receipt:state.receipt,receiptDone:state.receiptDone,now:Date.now()})){state.receipt=null;state.receiptDone=false;save()}
 const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='orders'; let customizing=null; let confirming=null; let pendingName=null; let askedName=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let ultimoContatto=null; let orderProgress=null; let progressTimer=null; let printed=new Set(); let incomeDetail=undefined; let menuFilter=''; let menuTab='pizza';
 let seenOrders=new Set(JSON.parse(localStorage.getItem('hm-seen-orders')||'[]')); let autoPrint=localStorage.getItem('hm-autoprint')==='1';
+// Dove eri in ogni scheda del menu (pizze, bibite): si ricorda per tornarci.
+const scrollPerScheda={};
+// Il captcha (Cloudflare Turnstile) davanti all'invio dell'ordine: c'e' solo
+// se in config.js ci sono la porta blindata (orderEndpoint) e la chiave del
+// sito. Lo script si carica una volta sola, e solo in quel caso.
+let turnstileWidget=null;
+function turnstileAttivo(){return runtime.mode==='supabase'&&captchaAttivo(appConfig)}
+if(turnstileAttivo()&&!document.querySelector('script[data-turnstile]')){const s=document.createElement('script');s.src='https://challenges.cloudflare.com/turnstile/v0/api.js';s.async=true;s.defer=true;s.dataset.turnstile='1';document.head.appendChild(s)}
+function montaTurnstile(){
+  const box=document.querySelector('#turnstile-box');
+  if(!box||!turnstileAttivo()||!window.turnstile)return;
+  try{box.innerHTML='';turnstileWidget=window.turnstile.render(box,{sitekey:appConfig.turnstileSiteKey,theme:'light',language:state.locale==='en'?'en':'it'})}catch{turnstileWidget=null}
+}
+function tokenTurnstile(){try{return window.turnstile?.getResponse(turnstileWidget)||null}catch{return null}}
 function load(){try{const saved=JSON.parse(localStorage.getItem('hm-state')||'{}');return {...defaults,...saved,calendar:{...defaults.calendar,...(saved.calendar||{}),exceptions:saved.calendar?.exceptions||[]},services:{...defaults.services,...(saved.services||{})},menu:mergeMenuDefaults(saved.menu||[],defaults.menu)}}catch{return structuredClone(defaults)}}
 function save(){localStorage.setItem('hm-state',JSON.stringify(state))}
 function reportRepositoryError(){toast('Dati salvati in locale: connessione non disponibile.')}
@@ -357,7 +372,7 @@ function confirmBody(){
     ${proposte.length?`<div class="upsell"><span class="upsell-title">${t('confirm.add')}</span><div class="upsell-row">${proposte.map(p=>{
       const quante=plainCartCount(state.cart,p.id);
       return `<div class="upsell-card${quante?' picked':''}">
-        ${p.imageUrl?`<img src="${esc(p.imageUrl)}" alt="" loading="lazy" decoding="async">`:'<span class="upsell-empty"></span>'}
+        <img src="${esc(dishImage(p))}" alt="" loading="lazy" decoding="async">
         <b>${esc(pname(p))}</b><span>${money(p.price)}</span>
         <div class="upsell-step"><button class="btn secondary" data-suggest-minus="${esc(p.id)}" ${quante?'':'disabled'}>\u2212</button><b>${quante}</b><button class="btn secondary" data-suggest="${esc(p.id)}">+</button></div>
       </div>`;
@@ -368,6 +383,7 @@ function confirmBody(){
       ${confirming.name?`<div><dt>${t('confirm.who')}</dt><dd>${esc(confirming.name)}</dd></div>`:''}
       <div><dt>${t('confirm.phone')}</dt><dd>${esc(confirming.phone)}</dd></div>
     </dl>
+    ${turnstileAttivo()?'<div id="turnstile-box" class="turnstile-box"></div>':''}
     <div class="confirm-actions">
       <button class="btn secondary" id="confirm-back">${t('confirm.back')}</button>
       <button class="btn primary" id="confirm-send">${confirming.paymentId==='cash'?t('confirm.send'):`${t('confirm.pay')} ${money(total)}`}</button>
@@ -401,12 +417,12 @@ function cart(){
 }
 
 
-function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${pname(p)}</h2><b class="custom-price-live" id="custom-price-live">${livePriceMarkup(p.price,price)}</b></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}" data-row="ing-${index}"><span>${localIngredient(ingredient,p.ingredientNames)}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.length>4?`<div class="field add-search-field"><input id="addition-search" type="search" placeholder="Cerca un'aggiunta\u2026" autocomplete="off"></div>`:''}<div id="addition-list">${customizing.additions.map((addition,index)=>`<div class="option-row${addition.quantity?' picked':''}" data-row="add-${index}" data-name="${esc(String(translateProduct(addition.names??{it:addition.name},state.locale)).toLowerCase())}"><span>${translateProduct(addition.names??{it:addition.name},state.locale)} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}" ${addition.quantity?'':'disabled'}>\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}</div><div class="allergens"><b>${esc(pallergenLine(p))}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${customizing.note}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
+function customizer(){const p=customizing.product,price=calculateCustomizedPrice(p.price,customizing.additions);return `<div class="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-label="${t('custom.title')}"><div class="modal-head"><div><span class="eyebrow">${t('custom.title')}</span><h2>${esc(pname(p))}</h2><b class="custom-price-live" id="custom-price-live">${livePriceMarkup(p.price,price)}</b></div><button class="btn secondary" id="custom-close">${t('cart.close')}</button></div>${dishPhoto(p,'modal')}<h3>${t('custom.included')}</h3>${p.ingredients.map((ingredient,index)=>`<div class="option-row${customizing.removed.includes(ingredient)?' removed':''}" data-row="ing-${index}"><span>${esc(localIngredient(ingredient,p.ingredientNames))}</span><div class="stepper"><button class="btn secondary ingredient-toggle" data-index="${index}">${customizing.removed.includes(ingredient)?'+':'\u2212'}</button><b>${customizing.removed.includes(ingredient)?t('custom.removed'):t('custom.kept')}</b></div></div>`).join('')}<h3>${t('custom.additions')}</h3>${customizing.additions.length>4?`<div class="field add-search-field"><input id="addition-search" type="search" placeholder="Cerca un'aggiunta\u2026" autocomplete="off"></div>`:''}<div id="addition-list">${customizing.additions.map((addition,index)=>`<div class="option-row${addition.quantity?' picked':''}" data-row="add-${index}" data-name="${esc(String(translateProduct(addition.names??{it:addition.name},state.locale)).toLowerCase())}"><span>${esc(translateProduct(addition.names??{it:addition.name},state.locale))} \u00b7 ${money(addition.price)}</span><div class="stepper"><button class="btn secondary addition-minus" data-index="${index}" ${addition.quantity?'':'disabled'}>\u2212</button><b>${addition.quantity}</b><button class="btn secondary addition-plus" data-index="${index}">+</button></div></div>`).join('')}</div><div class="allergens"><b>${esc(pallergenLine(p))}</b><p>${t('allergens.warning')}</p></div><div class="field"><label>${t('custom.note')}<textarea id="custom-note" rows="3" placeholder="${t('custom.notePlaceholder')}">${esc(customizing.note)}</textarea></label></div><button class="btn primary" id="custom-add">${t('custom.add')} \u00b7 ${money(price)}</button></section></div>`}
 
 // Cucina e Creator sono la stessa area riservata: le comande contengono nome e
 // telefono di chi ordina, non stanno dietro un semplice cambio di scheda.
 function loginPanel(titolo,sottotitolo){return `<div class="card login-card"><span class="eyebrow">Area riservata</span><h1>${titolo}</h1><p>${sottotitolo}</p><div class="field"><label>${runtime.mode==='supabase'?'Email':'Username'}<input id="user" ${runtime.mode==='supabase'?'type="email" autocomplete="username"':''}></label></div><div class="field"><label>Password<input id="pass" type="password" autocomplete="current-password"></label></div><button class="btn primary" id="login">Accedi</button></div>`}
-function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');const nuovi=ordiniNuovi();const prenNuove=prenotazioniNuove();const badge={orders:nuovi,bookings:prenNuove};return `${spiaConnessione()}${editorDraft?orderEditorPanel(editorDraft,state.menu,money,editorOpenLine,editorAdding):''}<div class="admin"><aside class="sidebar">${SEZIONI.map(([id,icona,nome])=>`<button class="btn ${adminSection===id?'primary':'secondary'} admin-nav" data-section="${id}"><span class="nav-ic" aria-hidden="true">${icona}</span>${nome}${badge[id]?`<span class="badge">${badge[id]}</span>`:''}</button>`).join('')}</aside><section>${adminContent()}</section></div>`}
+function creator(){if(!state.creator)return loginPanel('Creator','Entra per gestire servizio, ordini, menu e report.');const nuovi=ordiniNuovi();const prenNuove=prenotazioniNuove();const badge={orders:nuovi,bookings:prenNuove};return `${spiaConnessione()}${editorDraft?orderEditorPanel(editorDraft,state.menu,money,editorOpenLine,editorAdding):''}<div class="admin"><aside class="sidebar">${SEZIONI.map(([id,icona,nome])=>`<button class="btn ${adminSection===id?'primary':'secondary'} admin-nav" data-section="${id}"><span class="nav-ic" aria-hidden="true">${icona}</span>${nome}${badge[id]?`<span class="badge">${badge[id]}</span>`:''}</button>`).join('')}<button class="btn secondary admin-nav admin-logout" id="logout"><span class="nav-ic" aria-hidden="true">🚪</span>Esci</button></aside><section>${adminContent()}</section></div>`}
 function ordersWithAdjustments(){const movements=state.adjustments||[];return (state.orders||[]).map(order=>({...order,adjustments:movements.filter(movement=>String(movement.orderId)===String(order.id))}))}
 function detailOrder(){return detailOrderId?(state.orders||[]).find(o=>String(o.id)===String(detailOrderId)):null}
 function ingredientList(){return (state.ingredients&&state.ingredients.length)?state.ingredients:ingredientCatalog(state.menu)}
@@ -456,7 +472,6 @@ if(adminSection==='menu')return menuPanel(state.menu,menuDraft,state.allergens||
 }
 function reportCard(label,key,r){const attivo=incomeDetail===key;return `<button class="card income-card${attivo?' income-open':''}" data-income="${key}"><span class="eyebrow">${label}</span><div class="metric">${money(r.net)}</div><p>${r.orders} ordini · ${r.pizzas} pizze</p><small>Lordo ${money(r.gross)} · Trattenute ${money(r.fees)}<br>Supplementi ${money(r.supplements||0)} · Rimborsi ${money(r.refunds||0)}</small><span class="income-hint">${attivo?'Nascondi il dettaglio':'Vedi il dettaglio'}</span></button>`}
 function incomeDetailPanel(detail){const T={lunch:'Pranzo',dinner:'Serale'};const titolo=detail.shift?`Dettaglio incassi · ${T[detail.shift]??detail.shift}`:'Dettaglio incassi · Giornata';if(!detail.rows.length)return `<article class="card income-detail"><span class="eyebrow">${titolo}</span><p>Nessun ordine chiuso in questo turno.</p></article>`;const righe=detail.rows.map(r=>`<tr><td>#${String(r.number??'').padStart(2,'0')}</td><td>${r.pizzas}</td><td>${translatePaymentMethod?translatePaymentMethod(r.paymentMethod,state.locale):r.paymentMethod}${r.online?' <span class="income-online">online</span>':''}</td><td class="num">${money(r.gross)}</td><td class="num">${r.fees?('-'+money(r.fees)):'—'}</td><td class="num"><b>${money(r.net)}</b></td></tr>`).join('');return `<article class="card income-detail"><span class="eyebrow">${titolo}</span><div class="income-table-wrap"><table class="income-table"><thead><tr><th>Ordine</th><th>Pezzi</th><th>Pagamento</th><th class="num">Lordo</th><th class="num">Trattenute</th><th class="num">Netto</th></tr></thead><tbody>${righe}</tbody><tfoot><tr><td>Totale</td><td>${detail.totals.pizzas}</td><td>${detail.totals.orders} ordini</td><td class="num">${money(detail.totals.gross)}</td><td class="num">${detail.totals.fees?('-'+money(detail.totals.fees)):'—'}</td><td class="num"><b>${money(detail.totals.net)}</b></td></tr></tfoot></table></div><p class="editor-note">Le trattenute sono la commissione che Stripe tiene sui pagamenti online. Sui contanti non c'e' trattenuta.</p></article>`}
-function itemDetails(item){const changes=customizationLines(item);return `<p><b>${item.quantity}× ${item.name}</b>${changes.map(line=>`<br>${line}`).join('')}${item.note?`<br><span class="${/allerg|celiac|intoller/i.test(item.note)?'warning':''}">${item.note}</span>`:''}</p>`}
 function orderNumber(order){return order.sequence?`#${String(order.sequence).padStart(2,'0')}`:`#${order.id}`}
 function orderCard(o){
   const promessi=promisedMinutes(o);
@@ -507,10 +522,16 @@ function bind(){
   // Cambiare scheda riscrive solo l'elenco: la testata e le foto gia' caricate
   // restano dove sono.
   document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{
+    if(b.dataset.filter===productFilter)return;
+    // Ogni scheda ricorda dov'eri: si torna dalle bibite alle pizze e si
+    // riparte dalla stessa pizza, non dall'inizio dell'elenco.
+    scrollPerScheda[productFilter]=window.scrollY;
     productFilter=b.dataset.filter;
     const elenco=document.querySelector('#products');
     if(!elenco)return render();
     elenco.innerHTML=products(productFilter);
+    const ricordata=scrollPerScheda[productFilter];
+    window.scrollTo({top:ricordata??Math.min(window.scrollY,elenco.offsetTop-90),left:0,behavior:'instant'});
     document.querySelectorAll('[data-filter]').forEach(x=>{
       const attiva=x.dataset.filter===productFilter;
       x.classList.toggle('primary',attiva);
@@ -647,6 +668,7 @@ function bind(){
     bindConfirm();
   }
   function bindConfirm(){
+    montaTurnstile();
     document.querySelector('#confirm-back')?.addEventListener('click',()=>{confirming=null;render()});
     document.querySelector('#confirm-send')?.addEventListener('click',sendOrder);
     document.querySelectorAll('[data-suggest]').forEach(b=>b.onclick=()=>{
@@ -697,6 +719,13 @@ function bind(){
     const servizio=scheduledFor?(stessoGiorno?state.services[turno]??null:null):state.services[state.shift];
     const sequence=servizio&&stessoGiorno?nextServiceSequence(state.orders,servizio,state.activeDay):nextDailySequence(state.orders,businessDate);
     const order={id:143+state.orders.length,requestToken:crypto.randomUUID(),sequence,businessDate,businessDayId:stessoGiorno?state.activeDay?.id??null:null,serviceId:servizio?.id??null,source:'WEB',customer:dati.name||'Cliente',phone:dati.phone,email:dati.email,paymentMethod:payment.id,payment:payment.label,status:'preparing',shift:turno,createdAt:adesso,readyAt:scheduledFor??adesso+eta*60000,scheduledFor,total,gross:total,fee:fees,fees,items:cartItems};
+    // Con la porta blindata accesa, l'ordine parte solo con il captcha
+    // superato: un programma che spara ordini finti si ferma qui.
+    if(turnstileAttivo()){
+      const gettone=tokenTurnstile();
+      if(!gettone)return toast(t('captcha.missing'));
+      order.turnstileToken=gettone;
+    }
     try{
       // Numero pubblico e totale li decide il server: l'anteprima locale
       // servirebbe solo a mostrare un numero che poi cambia.
@@ -706,6 +735,9 @@ function bind(){
       if(pagaOnline(dati,appConfig)){
         try{
           const url=await urlCheckout({id:receipt?.id??order.id,requestToken:order.requestToken},appConfig);
+          // Il gettone dell'ordine resta sul telefono: al ritorno da Stripe
+          // serve a rileggere numero e attesa del proprio ordine.
+          try{localStorage.setItem('hm-pay-token',JSON.stringify({id:receipt?.id??order.id,token:order.requestToken}))}catch{}
           state.cart=[];confirming=null;state.contact=null;save();
           window.location.href=url;
           return;
@@ -842,6 +874,15 @@ function bind(){
   // L'avviso sul telefono o sul computer quando entra una prenotazione: il
   // browser lo permette solo se lo si chiede da un tocco, quindi c'e' un
   // bottone. Una volta accettato, sparisce.
+  // Uscire chiude la sessione del Creator e svuota dal dispositivo gli ordini
+  // con nomi e telefoni: su un telefono prestato non deve restare niente.
+  document.querySelector('#logout')?.addEventListener('click',async()=>{
+    try{await runtime.auth.signOut()}catch{}
+    stopAlarm();
+    state.creator=false;state.orders=[];state.adjustments=[];state.view='customer';save();
+    try{localStorage.removeItem('hm-repository-cache');localStorage.removeItem('hm-seen-orders')}catch{}
+    render();toast('Sei uscito.');
+  });
   document.querySelector('#enable-notifications')?.addEventListener('click',async()=>{
     const esito=await requestNotificationPermission();
     toast(esito==='granted'?'Notifiche attive su questo dispositivo.':'Notifiche non consentite dal browser.');
@@ -1135,7 +1176,9 @@ function bind(){
   if(annullato){toast('Pagamento annullato. L ordine non e stato inviato.');return}
   // La ricevuta minima: il resto (numero, stato) arriva dal server.
   state.receiptDone=false;
-  state.receipt={id:pagato,token:null,code:'',customer:'',phone:'',payment:'',total:0,minutes:null,readyAt:null,items:[],pizzeriaPhone:appConfig.pizzeriaPhone??null};
+  let gettone=null;
+  try{const salvato=JSON.parse(localStorage.getItem('hm-pay-token')||'null');if(salvato&&String(salvato.id)===String(pagato))gettone=salvato.token;localStorage.removeItem('hm-pay-token')}catch{}
+  state.receipt={id:pagato,token:gettone,code:'',customer:'',phone:'',payment:'',total:0,minutes:null,readyAt:null,items:[],pizzeriaPhone:appConfig.pizzeriaPhone??null};
   toast('Pagamento ricevuto. La tua pizza e in coda.');
 })();
 try{await stateRefresh.refresh()}catch{}
