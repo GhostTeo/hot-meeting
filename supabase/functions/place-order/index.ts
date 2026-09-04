@@ -5,8 +5,10 @@
 // controlli che dal database non si possono fare, perche' li' non arriva
 // l'indirizzo di chi chiama:
 //   1. quanti ordini arrivano dallo stesso indirizzo IP (contatori in
-//      rate_buckets, via rate_limit_hit): sei al minuto e quaranta al giorno
-//      bastano a qualunque famiglia e fermano un programma;
+//      rate_buckets, via rate_limit_hit): dieci al minuto e centoventi al
+//      giorno. Larghi apposta: sulle reti mobili molti clienti diversi escono
+//      con lo stesso indirizzo, e nessun cliente vero deve restare fuori. Il
+//      tetto stretto per numero di telefono lo mette gia' il database;
 //   2. il captcha di Cloudflare Turnstile, se c'e' il segreto TURNSTILE_SECRET.
 // Poi si chiama create_public_order come farebbe il sito, e si rimanda
 // indietro la risposta (o l'errore, con le stesse parole del database, cosi'
@@ -66,8 +68,8 @@ Deno.serve(async (req) => {
   const ip = indirizzo(req);
   const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
 
-  const alMinuto = await admin.rpc('rate_limit_hit', { p_bucket: `ip:${ip}:minuto`, p_limit: 6, p_window: '1 minute' });
-  const alGiorno = await admin.rpc('rate_limit_hit', { p_bucket: `ip:${ip}:giorno`, p_limit: 40, p_window: '1 day' });
+  const alMinuto = await admin.rpc('rate_limit_hit', { p_bucket: `ip:${ip}:minuto`, p_limit: 10, p_window: '1 minute' });
+  const alGiorno = await admin.rpc('rate_limit_hit', { p_bucket: `ip:${ip}:giorno`, p_limit: 120, p_window: '1 day' });
   if (alMinuto.error || alGiorno.error) return risposta({ error: 'servizio momentaneamente non disponibile' }, 503);
   if (alMinuto.data === false || alGiorno.data === false) return risposta({ error: 'too many orders right now' }, 429);
 
