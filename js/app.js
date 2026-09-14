@@ -46,7 +46,7 @@ let state=load();
 // tempo), lo dimentichiamo cosi' il cliente riparte dal menu invece di ritrovarsi
 // fermo sull'attesa di prima.
 if(shouldForgetReceipt({receipt:state.receipt,receiptDone:state.receiptDone,now:Date.now()})){state.receipt=null;state.receiptDone=false;save()}
-const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='orders'; let customizing=null; let confirming=null; let pendingName=null; let askedName=null; let productFilter='pizza'; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let ultimoContatto=null; let orderProgress=null; let progressTimer=null; let printed=new Set(); let incomeDetail=undefined; let menuFilter=''; let menuTab='pizza';
+const runtime=await bootstrapDataLayer({config:appConfig,supabase:globalThis.supabase,storage:localStorage,initialState:{menu:state.menu,calendar:state.calendar,services:state.services,activeDay:state.activeDay,shift:state.shift,online:state.online,orders:state.orders}}); const repository=runtime.repository; state.creator=runtime.mode==='local'?state.creator:isCreatorSession(runtime.session); let adminSection='orders'; let customizing=null; let confirming=null; let pendingName=null; let askedName=null; let productFilter='pizza'; let productSearch=''; let menuDraft=null; let counterDraft=null; let detailOrderId=null; let historyFilters={}; let editingOrderId=null; let editorDraft=null; let editorOpenLine=null; let editorAdding=false; let refocusHistoryQuery=false; let pendingDialog=null; let releaseDialogTrap=null; let dialogReturnFocus=null; let hasRendered=false; let ordersSeen=null; let ultimoContatto=null; let orderProgress=null; let progressTimer=null; let printed=new Set(); let incomeDetail=undefined; let menuFilter=''; let menuTab='pizza';
 let seenOrders=new Set(JSON.parse(localStorage.getItem('hm-seen-orders')||'[]')); let autoPrint=localStorage.getItem('hm-autoprint')==='1';
 // Dove eri in ogni scheda del menu (pizze, bibite): si ricorda per tornarci.
 const scrollPerScheda={};
@@ -254,6 +254,7 @@ function customer(){
       </div>
       <div class="status ${open?'':'closed-status'}"><b>${open?t('status.open'):t('status.closed')}</b>${closure.closed?`<p class="closure-reason"><strong>${esc(closure.message)}</strong><br>${closure.date}</p>`:closedHours?`<p class="closure-reason"><strong>${closedHours.number?`<a href="tel:${esc(closedHours.number)}">${esc(closedHours.tel)}</a>`:esc(closedHours.tel)}</strong><br>${esc(closedHours.quando)}</p>`:`<p>${t('status.wait')}: ${eta}\u2013${eta+5} ${t('status.minutes')}</p>`}</div>
     </section>
+    <div class="menu-search"><span class="menu-search-ic" aria-hidden="true">\u{1F50D}</span><input id="menu-search" type="search" inputmode="search" autocomplete="off" placeholder="${t('menu.search')}" value="${esc(productSearch)}"></div>
     <nav class="menu-nav">
       <button class="btn ${productFilter==='pizza'?'primary':'secondary'}" data-filter="pizza">${t('tabs.pizzas')}</button>
       <button class="btn ${productFilter==='drink'?'primary':'secondary'}" data-filter="drink">${t('tabs.drinks')}</button>
@@ -323,8 +324,16 @@ function dishCard(p,closed,weekly=false){
       </div>
     </article>`;
 }
+// Cerca nel nome, negli ingredienti e nella descrizione: cosi' scrivendo
+// "piccante" si trova la Diavola anche se il nome non lo dice.
+function matchesSearch(p,q){
+  if(!q)return true;
+  const testo=[pname(p),(p.ingredients||[]).map(name=>localIngredient(name,p.ingredientNames)).join(' '),pdesc(p)].join(' ').toLowerCase();
+  return testo.includes(q);
+}
 function products(type){
   const closed=(currentClosure().closed||!hoursStatus().open)&&!bookingOpen();
+  const q=productSearch.trim().toLowerCase();
   if(type==='pizza'){
     let settimana=weeklyPizzas(state.menu);
     // Se il locale non ne ha scelta una, ne mettiamo noi una a rotazione
@@ -332,12 +341,18 @@ function products(type){
     if(!settimana.length){const auto=autoWeeklyPizza(state.menu,new Date());if(auto)settimana=[auto]}
     const idSettimana=new Set(settimana.map(p=>p.id));
     const normali=regularPizzas(state.menu).filter(p=>!idSettimana.has(p.id));
+    // Cercando si esce dalla fascia "in evidenza": conta solo trovare la
+    // pizza giusta, non piu' distinguerla dalle altre.
+    if(q){
+      const trovate=[...settimana,...normali].filter(p=>matchesSearch(p,q));
+      return trovate.length?trovate.map(p=>dishCard(p,closed)).join(''):`<p>${t('menu.searchEmpty')}</p>`;
+    }
     if(!settimana.length&&!normali.length)return `<p>${t('product.drink')}</p>`;
     const inEvidenza=settimana.length?`<div class="dish-weekly-band"><h2 class="dish-weekly-title">Pizza della settimana</h2><div class="grid dish-grid">${settimana.map(p=>dishCard(p,closed,true)).join('')}</div></div>`:'';
     return inEvidenza+normali.map(p=>dishCard(p,closed)).join('');
   }
-  const list=state.menu.filter(p=>p.type===type&&p.available);
-  if(!list.length)return `<p>${t('product.drink')}</p>`;
+  const list=state.menu.filter(p=>p.type===type&&p.available&&matchesSearch(p,q));
+  if(!list.length)return `<p>${q?t('menu.searchEmpty'):t('product.drink')}</p>`;
   return list.map(p=>dishCard(p,closed)).join('');
 }
 
@@ -539,6 +554,16 @@ function bind(){
     });
     bindAddButtons();
     haptic();
+  });
+  // Si riscrive solo l'elenco, mai la pagina intera: un render() completo
+  // distruggerebbe l'input di ricerca mentre ci si sta ancora scrivendo
+  // dentro, facendo perdere il cursore a ogni lettera digitata.
+  document.querySelector('#menu-search')?.addEventListener('input',event=>{
+    productSearch=event.target.value;
+    const elenco=document.querySelector('#products');
+    if(!elenco)return;
+    elenco.innerHTML=products(productFilter);
+    bindAddButtons();
   });
   document.querySelector('#custom-close')?.addEventListener('click',()=>{customizing=null;render()});
   // Toccare un ingrediente cambia una riga, non la pagina: ricostruire tutto
